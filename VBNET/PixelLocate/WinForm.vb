@@ -9,7 +9,13 @@ Imports TatukGIS_XDK11
 
 Namespace PixelLocate
     ''' <summary>
-    ''' Summary description for WinForm.
+    ''' PixelLocate sample — demonstrates how to query pixel values from raster (DEM and image)
+    ''' layers using TGIS_LayerPixel.Locate. Loads either a satellite image (DOQ) or a digital
+    ''' elevation model (DEM), then displays the RGB color and native pixel channel values when
+    ''' the user moves the cursor over the raster. Includes a brightness adjustment slider to
+    ''' modify raster appearance. Useful for analyzing pixel content in GIS applications.
+    ''' ActiveX note: GisUtils is an instance object; GIS.Items.Item(i) replaces the indexer;
+    ''' TGIS_DoubleArray is used for the COM-compatible native pixel values.
     ''' </summary>
     Public Class WinForm
         Inherits System.Windows.Forms.Form
@@ -236,18 +242,22 @@ Namespace PixelLocate
             Application.Run(New WinForm())
         End Sub
 
+        ''' <summary>Updates the brightness of the raster layer when the user moves the slider.</summary>
         Private Sub tbBrightness_Scroll(ByVal sender As Object, ByVal e As System.EventArgs) Handles tbBrightness.Scroll
             Dim lp As TGIS_LayerPixel
 
+            '' get the first (and likely only) pixel layer in the map
             lp = CType(GIS.Items.item(0), TGIS_LayerPixel)
             If lp Is Nothing Then
                 Return
             End If
 
+            '' apply the brightness adjustment from the slider (-100 to +100)
             lp.Params.Pixel.Brightness = tbBrightness.Value
             GIS.InvalidateWholeMap()
         End Sub
 
+        ''' <summary>Queries pixel values under the cursor and displays RGB color and native channel values.</summary>
         Private Sub GIS_MouseMove(ByVal sender As Object, ByVal e As AxTatukGIS_XDK11.ITGIS_ViewerWndEvents_MouseMoveEvent) Handles GIS.MouseMoveEvent
             Dim ptg As TGIS_Point
             Dim lp As TGIS_LayerPixel
@@ -256,27 +266,38 @@ Namespace PixelLocate
             Dim bT As Boolean = False
             Dim i As Integer
 
+            '' skip if no layers are loaded
             If GIS.IsEmpty Then
                 Return
             End If
 
+            '' skip if not in Select mode (only query pixels when in Select interaction mode)
             If GIS.Mode <> TGIS_ViewerMode.Select Then
                 Return
             End If
 
+            '' convert screen coordinates to map coordinates
             ptg = GIS.ScreenToMap(GisUtils.Point(e.X, e.Y))
             lp = CType(GIS.Items.Item(0), TGIS_LayerPixel)
 
+            '' skip if no pixel layer exists
             If lp Is Nothing Then
                 Return
             End If
 
+            '' avoid querying while the map is being redrawn
             If Not GIS.InPaint Then
+                '' Locate returns True if the point falls within the raster extent;
+                '' it populates rgbMapped (the display color) and nativesVals (raw channel values)
                 If lp.Locate(ptg, rgbMapped, nativesVals, bT) Then
+                    '' display the RGB color as a color swatch
                     paColorC.BackColor = Color.FromArgb(rgbMapped.R, rgbMapped.G, rgbMapped.B)
+                    '' show the RGB values in text format
                     lbRGBValueC.Text = String.Format("RGB :  {0} , {1} , {2} ", rgbMapped.R, rgbMapped.G, rgbMapped.B)
+                    '' clear and populate the native channel values display
                     textBox1.Clear()
                     i = 0
+                    '' iterate through all native channels (bands) and display their values
                     Do While i < nativesVals.Length
                         textBox1.AppendText(String.Format("CH{0} =  {1:F0}" & Constants.vbCrLf, i, nativesVals.Value(i)))
                         i += 1
@@ -285,14 +306,20 @@ Namespace PixelLocate
             End If
         End Sub
 
+        ''' <summary>Opens a satellite image (DOQ) for inspection and enables brightness adjustment.</summary>
         Private Sub btnImage_Click(sender As Object, e As EventArgs) Handles btnImage.Click
+            '' load a Digital Orthophoto Quad (DOQ) satellite image
             GIS.Open(GisUtils.GisSamplesDataDirDownload() & "\World\Countries\USA\States\California\San Bernardino\DOQ\37134877.jpg")
+            '' enable brightness slider for images
             tbBrightness.Enabled = True
             tbBrightness.Value = 0
         End Sub
 
+        ''' <summary>Opens a digital elevation model (DEM) for analysis; disables brightness adjustment for DEMs.</summary>
         Private Sub btnGrid_Click(sender As Object, e As EventArgs) Handles btnGrid.Click
+            '' load a National Elevation Dataset (NED) grid in ArcInfo format
             GIS.Open(GisUtils.GisSamplesDataDirDownload() & "\World\Countries\USA\States\California\San Bernardino\NED\w001001.adf")
+            '' disable brightness slider for elevation data (not applicable)
             tbBrightness.Enabled = False
             tbBrightness.Value = 0
         End Sub

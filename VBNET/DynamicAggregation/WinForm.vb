@@ -8,6 +8,19 @@ Imports TatukGIS_XDK11
 Imports AxTatukGIS_XDK11
 
 Namespace DynamicAggregation
+    ''' <summary>
+    ''' DynamicAggregation sample — demonstrates TGIS_DynamicAggregatorFactory for real-time
+    ''' point clustering on a GIS layer.
+    '''
+    ''' Loads a TatukGIS project (Aggregation.ttkproject) containing a "cities" point layer.
+    ''' A left panel offers three controls: Aggregation method (Off or a factory-registered name),
+    ''' Radius (5–80 pt), and Threshold (0–10).  Changing any control calls changeAggregation
+    ''' which installs or removes the selected TGIS_DynamicAggregator on the layer.
+    '''
+    ''' ActiveX-specific differences: GIS is AxTGIS_ViewerWnd; GisUtils and AggregatorFactory
+    ''' are instance objects (not static); aggregator names enumerated via
+    ''' AggregatorFactory.Names.Strings(i).
+    ''' </summary>
     Public Class WinForm
         Inherits System.Windows.Forms.Form
 
@@ -160,22 +173,36 @@ Namespace DynamicAggregation
             Application.Run(New WinForm())
         End Sub
 
+        ''' <summary>Opens the project, populates the method combo with all registered aggregator names, and
+        ''' sets initial selections with Radius and Threshold disabled.</summary>
         Private Sub WinForm_Load(ByVal sender As Object, ByVal e As System.EventArgs) Handles Me.Load
+            '' load the GIS project file containing the cities point layer
             GIS.Open(GisUtils.GisSamplesDataDirDownload() & "\Samples\Aggregation\Aggregation.ttkproject")
             GIS.Open("c:\project\sampledata\Samples\Aggregation\Aggregation.ttkproject")
+
+            '' populate the aggregation method combo box
+            '' start with "Off" to disable aggregation as the first option
             cbxMethod.Items.Add("Off")
 
-
+            '' enumerate all registered aggregator types from the factory
+            '' the factory maintains a list of available aggregation algorithms
             For i As Integer = 0 To AggregatorFactory.Names.Count - 1
+                '' add each registered aggregator name (e.g., "ShapeReduction", "QuadTree")
                 cbxMethod.Items.Add(AggregatorFactory.Names.Strings(i))
             Next
 
+            '' set initial selections
+            '' aggregation is off by default
             cbxMethod.SelectedIndex = 0
+            '' set threshold to minimum (0) initially
             cbxThreshhold.SelectedIndex = 0
+            '' disable radius and threshold controls when aggregation is off
             cbxRadius.Enabled = False
             cbxThreshhold.Enabled = False
         End Sub
 
+        ''' <summary>Sets a sensible default radius index when the method changes: index 0 (5 pt) for
+        ''' ShapeReduction, index 3 (40 pt) for all other methods.</summary>
         Private Sub readDeafaultValues()
             If cbxMethod.SelectedItem.ToString().Equals("ShapeReduction") Then
                 cbxRadius.SelectedIndex = 0
@@ -184,36 +211,55 @@ Namespace DynamicAggregation
             End If
         End Sub
 
+        ''' <summary>Installs or removes the selected TGIS_DynamicAggregator on the "cities" layer,
+        ''' applies the current Radius and Threshold, and redraws the map.</summary>
         Private Sub changeAggregation()
+            '' get the aggregation method name from the combo box
             Dim dyn_agg_name As String = cbxMethod.SelectedItem.ToString()
+            '' fetch the cities layer from the GIS viewer
             Dim lv As TGIS_LayerVector = CType(GIS.[Get]("cities"), TGIS_LayerVector)
+            '' set transparency so clustered points are semi-transparent (visible when stacked)
             lv.Transparency = 70
 
             If dyn_agg_name.Equals("Off") Then
+                '' disable aggregation: turn off radius and threshold controls
                 cbxRadius.Enabled = False
                 cbxThreshhold.Enabled = False
+                '' remove any existing aggregator from the layer
                 lv.DynamicAggregator = Nothing
             Else
+                '' enable aggregation: activate radius and threshold controls
                 cbxRadius.Enabled = True
                 cbxThreshhold.Enabled = True
 
+                '' create an aggregator instance using the factory pattern
+                '' the factory creates the appropriate aggregator type based on the name
+                '' (e.g., "ShapeReduction", "QuadTree", etc.)
                 lv.DynamicAggregator = AggregatorFactory.CreateInstance(dyn_agg_name, lv)
+                '' set the radius in screen pixels (e.g., "SIZE: 5 pt", "SIZE: 20 pt")
+                '' radius determines the cluster distance threshold in the viewer
                 lv.DynamicAggregator.RadiusAsText = "SIZE: " & cbxRadius.SelectedItem.ToString()
+                '' set the aggregation threshold: minimum cluster size to trigger aggregation
+                '' (0 = always aggregate, higher values = fewer clusters)
                 lv.DynamicAggregator.Threshold = Int32.Parse(cbxThreshhold.SelectedItem.ToString())
             End If
 
+            '' repaint the map to apply the new aggregation settings
             GIS.InvalidateWholeMap()
         End Sub
 
+        ''' <summary>Resets the default radius for the chosen method, then applies the new aggregator.</summary>
         Private Sub cbxMethod_SelectedIndexChanged(ByVal sender As Object, ByVal e As EventArgs) Handles cbxMethod.SelectedIndexChanged
             readDeafaultValues()
             changeAggregation()
         End Sub
 
+        ''' <summary>Re-applies the aggregator with the newly selected radius.</summary>
         Private Sub cbxRadius_SelectedIndexChanged(ByVal sender As Object, ByVal e As EventArgs) Handles cbxRadius.SelectedIndexChanged
             changeAggregation()
         End Sub
 
+        ''' <summary>Re-applies the aggregator with the newly selected threshold.</summary>
         Private Sub cbxThreshhold_SelectedIndexChanged(ByVal sender As Object, ByVal e As EventArgs) Handles cbxThreshhold.SelectedIndexChanged
             changeAggregation()
         End Sub

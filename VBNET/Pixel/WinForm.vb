@@ -1,3 +1,30 @@
+' Pixel sample — demonstrates rendering raster layers with various visual effects (ActiveX/COM edition).
+'
+' What the sample shows:
+'   - Loading a pre-built .ttkproject file containing a raster layer
+'   - Switching between rendering profiles via combo box selector
+'   - Normal rendering: standard colour display for multi-band imagery
+'   - Normal with histogram: histogram-stretch for enhanced contrast
+'   - Grayscale rendering: single-channel conversion for monochrome display
+'   - Transparent rendering: alpha-channel and transparency support
+'   - Colorize rendering: maps pixel values through custom colour gradients
+'   - Inversion rendering: inverts all colour channels (negative effect)
+'   - Inversion by RGB: inverts individual R, G, B channels separately
+'
+' ActiveX/COM-specific details:
+'   - AxTGIS_ViewerWnd is the ActiveX wrapper for the TatukGIS viewer control
+'   - API functionality identical to NDK WinForms, accessed through COM interop
+'   - Open exposed as Open_2 to resolve COM naming conflicts
+'   - TGIS_Utils accessed as COM instance, not static class
+'
+' Key TatukGIS API concepts shown here:
+'   TGIS_ViewerWnd (via AxTGIS_ViewerWnd) - main visual map control
+'   TGIS_LayerPixel                       - raster/pixel layer (imagery, DEMs, etc.)
+'   GIS.Open() (COM)                      - opens .ttkproject with all layers
+'   GIS.FullExtent()                      - zoom to combined extent of all layers
+'   TGIS_ViewerMode                       - interaction modes (Zoom, Drag)
+' =============================================================================
+
 Imports Microsoft.VisualBasic
 Imports System
 Imports System.Drawing
@@ -9,35 +36,38 @@ Imports TatukGIS_XDK11
 
 Namespace Pixel
     ''' <summary>
-    ''' Summary description for WinForm.
+    ''' Main form for the Pixel sample application (ActiveX edition).
+    ''' Demonstrates loading and displaying a raster pixel layer through
+    ''' various rendering project configurations.
     ''' </summary>
     Public Class WinForm
         Inherits System.Windows.Forms.Form
-        ''' <summary>
-        ''' Required designer variable.
-        ''' </summary>
+        ''' <summary>Required designer variable.</summary>
         Private components As System.ComponentModel.IContainer
-        Private WithEvents toolBar1 As System.Windows.Forms.ToolBar
-        Private btnFullExtent As System.Windows.Forms.ToolBarButton
-        Private toolBarButton1 As System.Windows.Forms.ToolBarButton
-        Private btnZoom As System.Windows.Forms.ToolBarButton
-        Private btnDrag As System.Windows.Forms.ToolBarButton
-        Private toolBarButton2 As System.Windows.Forms.ToolBarButton
-        Private WithEvents comboBox1 As System.Windows.Forms.ComboBox
-        Private GIS As AxTatukGIS_XDK11.AxTGIS_ViewerWnd
+        Private WithEvents toolBar1 As System.Windows.Forms.ToolBar      ' Classic toolbar control
+        Private btnFullExtent As System.Windows.Forms.ToolBarButton      ' Zoom to full extent
+        Private toolBarButton1 As System.Windows.Forms.ToolBarButton     ' Separator
+        Private btnZoom As System.Windows.Forms.ToolBarButton            ' Enable zoom mode
+        Private btnDrag As System.Windows.Forms.ToolBarButton            ' Enable drag/pan mode
+        Private toolBarButton2 As System.Windows.Forms.ToolBarButton     ' Separator
+        Private WithEvents comboBox1 As System.Windows.Forms.ComboBox    ' Project selector
+        Private GIS As AxTatukGIS_XDK11.AxTGIS_ViewerWnd                ' ActiveX TatukGIS viewer
         Private statusBar1 As System.Windows.Forms.StatusBar
         Private imageList1 As System.Windows.Forms.ImageList
         Private panel1 As System.Windows.Forms.Panel
 
+        ''' <summary>
+        ''' Initialises the form components and sets the GIS viewer as the
+        ''' active control so keyboard navigation works immediately.
+        ''' </summary>
         Public Sub New()
             '
             ' Required for Windows Form Designer support
             '
             InitializeComponent()
 
-            '
-            ' TODO: Add any constructor code after InitializeComponent call
-            '
+            ' Give keyboard focus to the GIS viewer straight away so the
+            ' user can pan/zoom without needing an extra mouse click.
             Me.ActiveControl = GIS
         End Sub
 
@@ -187,10 +217,12 @@ Namespace Pixel
         End Sub
 #End Region
 
+        ' GisUtils provides helper methods such as GisSamplesDataDirDownload()
+        ' for resolving the sample-data path at runtime.
         Dim GisUtils As New TGIS_Utils()
 
         ''' <summary>
-        ''' The main entry point for the application.
+        ''' Application entry point.
         ''' </summary>
         <STAThread>
         Shared Sub Main()
@@ -199,23 +231,40 @@ Namespace Pixel
             Application.Run(New WinForm())
         End Sub
 
+        ''' <summary>
+        ''' Handles the Form Load event.
+        ''' Selects the first project in the combo box, which fires
+        ''' comboBox1_SelectedIndexChanged and causes the raster layer to load.
+        ''' </summary>
         Private Sub WinForm_Load(ByVal sender As Object, ByVal e As System.EventArgs) Handles MyBase.Load
             comboBox1.SelectedIndex = 0
         End Sub
 
+        ''' <summary>
+        ''' Opens the .ttkproject file that corresponds to the currently selected
+        ''' combo-box item. The project file encodes the raster layer source and
+        ''' all rendering parameters (colour mode, histogram settings, etc.).
+        ''' GIS.Open() replaces any previously loaded content with the new project.
+        ''' </summary>
         Private Sub comboBox1_SelectedIndexChanged(ByVal sender As Object, ByVal e As System.EventArgs) Handles comboBox1.SelectedIndexChanged
             GIS.Open(GisUtils.GisSamplesDataDirDownload() + "\Samples\Projects\" + comboBox1.Items(comboBox1.SelectedIndex))
         End Sub
 
+        ''' <summary>
+        ''' Handles toolbar button clicks.
+        ''' Button index 0 = Full Extent; 2 = Zoom mode; 3 = Drag/pan mode.
+        ''' For toggle-style mode buttons the previously pushed button is
+        ''' un-pushed to maintain a mutually-exclusive selection.
+        ''' </summary>
         Private Sub toolBar1_ButtonClick(ByVal sender As Object, ByVal e As System.Windows.Forms.ToolBarButtonClickEventArgs) Handles toolBar1.ButtonClick
             Select Case toolBar1.Buttons.IndexOf(e.Button)
                 Case 0
-                    GIS.FullExtent()
+                    GIS.FullExtent()          ' Reset view to show all loaded layers
                 Case 2
-                    toolBar1.Buttons(3).Pushed = False
+                    toolBar1.Buttons(3).Pushed = False  ' Un-push Drag before enabling Zoom
                     GIS.Mode = TGIS_ViewerMode.Zoom
                 Case 3
-                    toolBar1.Buttons(2).Pushed = False
+                    toolBar1.Buttons(2).Pushed = False  ' Un-push Zoom before enabling Drag
                     GIS.Mode = TGIS_ViewerMode.Drag
             End Select
         End Sub

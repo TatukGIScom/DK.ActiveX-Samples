@@ -1,3 +1,35 @@
+' =============================================================================
+' Locate sample — demonstrates feature identification and location by finding
+' shapes at the cursor position using spatial queries and coordinate conversion
+' (ActiveX/COM wrapper edition).
+'
+' What the sample shows:
+'   - Loading a polygon shapefile (California Counties) into the GIS viewer
+'   - Feature location: finding which shape is at a given position
+'   - Screen-to-map coordinate conversion via ScreenToMap
+'   - Spatial tolerance: pixel screen tolerance for easier feature selection
+'   - GIS.Locate: queries features at a geographic position
+'   - Shape attributes: retrieving field values from selected features
+'   - Shape flashing: visual feedback highlighting the selected shape
+'   - Dynamic status bar: real-time display of feature attributes
+'   - Toolbar with Full Extent, Zoom In/Out navigation buttons
+'
+' ActiveX-specific implementation details:
+'   - Using AxTGIS_ViewerWnd (ActiveX wrapper control, not WinForms.TGIS_ViewerWnd)
+'   - GIS.Items.Item(i) instead of standard indexer (COM compatibility)
+'   - MouseDown event from AxHost with COM-specific event argument types
+'   - GisUtils instance object instead of static TGIS_Utils class
+'
+' Key TatukGIS API concepts shown here:
+'   TGIS_ViewerWnd              - main visual map control (ActiveX COM version)
+'   TGIS_ViewerWnd.ScreenToMap  - convert screen pixel to geographic coordinate
+'   TGIS_ViewerWnd.Locate       - find topmost shape at location with tolerance
+'   TGIS_Shape                  - geographic feature with field access
+'   TGIS_Shape.Flash()          - briefly highlight shape for visual feedback
+'   OnMouseMove / OnMouseDown   - user interaction event handling
+'   TGIS_ControlLegend          - layer list/legend panel
+' =============================================================================
+
 Imports Microsoft.VisualBasic
 Imports System
 Imports System.Drawing
@@ -8,9 +40,6 @@ Imports System.Data
 Imports TatukGIS_XDK11
 
 Namespace Locate
-    ''' <summary>
-    ''' Summary description for WinForm.
-    ''' </summary>
     Public Class WinForm
         Inherits System.Windows.Forms.Form
         ''' <summary>
@@ -156,14 +185,18 @@ Namespace Locate
             Application.Run(New WinForm())
         End Sub
 
+        ''' <summary>Loads the California counties shapefile into the viewer for interaction.</summary>
         Private Sub WinForm_Load(ByVal sender As Object, ByVal e As System.EventArgs) Handles MyBase.Load
+            '' open the counties layer; counties are polygons with a "name" field
             GIS.Open(GisUtils.GisSamplesDataDirDownload() & "\World\Countries\USA\States\California\Counties.SHP")
         End Sub
 
+        ''' <summary>Locates and flashes the shape beneath the mouse click.</summary>
         Private Sub GIS_MouseDown(ByVal sender As Object, ByVal e As AxTatukGIS_XDK11.ITGIS_ViewerWndEvents_MouseDownEvent) Handles GIS.MouseDownEvent
             Dim ptg As TGIS_Point
             Dim shp As TGIS_Shape
 
+            '' skip if map is empty or currently painting
             If GIS.IsEmpty Then
                 Return
             End If
@@ -171,18 +204,22 @@ Namespace Locate
                 Return
             End If
 
-            ' if selected shape found, flash it
+            '' convert screen coordinates to map coordinates
             ptg = GIS.ScreenToMap(GisUtils.Point(e.x, e.y))
-            shp = CType(GIS.Locate(ptg, 5 / GIS.Zoom), TGIS_Shape) ' 5 pixels precision
+            '' use Locate to find any shape at this position (with 5-pixel tolerance for easier selection)
+            shp = CType(GIS.Locate(ptg, 5 / GIS.Zoom), TGIS_Shape)
+            '' if a shape was found, flash it to provide visual feedback to the user
             If Not shp Is Nothing Then
                 shp.Flash()
             End If
         End Sub
 
+        ''' <summary>Locates shapes under the cursor and displays the county name in the status bar.</summary>
         Private Sub GIS_MouseMove(ByVal sender As Object, ByVal e As AxTatukGIS_XDK11.ITGIS_ViewerWndEvents_MouseMoveEvent) Handles GIS.MouseMoveEvent
             Dim ptg As TGIS_Point
             Dim shp As TGIS_Shape
 
+            '' skip if map is empty or currently painting
             If GIS.IsEmpty Then
                 Return
             End If
@@ -190,9 +227,11 @@ Namespace Locate
                 Return
             End If
 
-            ' locate a position
+            '' convert screen coordinates to map space
             ptg = GIS.ScreenToMap(GisUtils.Point(e.x, e.y))
-            shp = CType(GIS.Locate(ptg, 5 / GIS.Zoom), TGIS_Shape) ' 5 pixels precision
+            '' locate the shape at the current cursor position
+            shp = CType(GIS.Locate(ptg, 5 / GIS.Zoom), TGIS_Shape)
+            '' if a shape exists, display its name field in the status bar; otherwise clear it
             If shp Is Nothing Then
                 statusBar1.Text = ""
             Else
@@ -200,23 +239,30 @@ Namespace Locate
             End If
         End Sub
 
+        ''' <summary>Handles toolbar button clicks for zoom and full extent operations.</summary>
         Private Sub toolBar1_ButtonClick(ByVal sender As Object, ByVal e As System.Windows.Forms.ToolBarButtonClickEventArgs) Handles toolBar1.ButtonClick
             Select Case toolBar1.Buttons.IndexOf(e.Button)
                 Case 0
+                    '' button 0: reset map to full extent
                     GIS.FullExtent()
                 Case 1
+                    '' button 1: zoom in (increase zoom 2x)
                     GIS.Zoom = GIS.Zoom * 2
                 Case 2
+                    '' button 2: zoom out (decrease zoom 2x)
                     GIS.Zoom = GIS.Zoom / 2
             End Select
         End Sub
 
+        ''' <summary>Changes the cursor to a hand pointer when hovering over toolbar buttons for better UX.</summary>
         Private Sub toolBar1_MouseMove(ByVal sender As Object, ByVal e As System.Windows.Forms.MouseEventArgs) Handles toolBar1.MouseMove
             Dim p As Point = New Point(e.X, e.Y)
 
+            '' show hand cursor if mouse is over any of the three toolbar buttons
             If toolBar1.Buttons(0).Rectangle.Contains(p) OrElse toolBar1.Buttons(1).Rectangle.Contains(p) OrElse toolBar1.Buttons(2).Rectangle.Contains(p) Then
                 toolBar1.Cursor = Cursors.Hand
             Else
+                '' restore default cursor when not over buttons
                 toolBar1.Cursor = Cursors.Default
             End If
         End Sub

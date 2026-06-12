@@ -1,3 +1,25 @@
+' HelloDK - TatukGIS Developer Kernel (DK11) introductory sample (VB.NET / ActiveX wrapper).
+'
+' Demonstrates the core DK workflow via the COM/ActiveX TatukGIS_XDK11 wrapper:
+'   1. Opening a vector Shapefile into the map viewer.
+'   2. Switching the viewer interaction mode: Zoom / Drag / Select.
+'   3. Creating an in-memory editable vector layer with a transparent polygon style.
+'   4. Building a polygon shape programmatically by adding explicit vertices.
+'   5. Click-to-select a feature using screen-to-map coordinate conversion
+'      and spatial proximity search (GIS.Locate).
+'   6. Spatial containment query using the DE-9IM matrix string "T*****FF*"
+'      combined with a SQL WHERE filter to find world features whose label
+'      starts with 's' and that are geometrically contained within the
+'      user-created polygon.
+'
+' Unlike DK.NET samples which use TatukGIS.NDK, this sample uses the ActiveX
+' (COM) wrapper TatukGIS_XDK11. Some API calls differ slightly:
+'   - TGIS_Color.Blue    -> (New TGIS_Color).Blue
+'   - TGIS_Utils.*       -> GisUtils.* (instance of TGIS_Utils)
+'   - lv.Loop(...)       -> lv.Loop_4(...) (COM overload disambiguation)
+'   - GIS.Items[i]       -> GIS.Items.Item(i)
+'   - GIS.ScreenToMap    -> GIS.ScreenToMap(GisUtils.Point(x, y))
+
 Imports Microsoft.VisualBasic
 Imports System
 Imports System.Drawing
@@ -9,37 +31,36 @@ Imports TatukGIS_XDK11
 
 Namespace DK.WinForms.VB
     ''' <summary>
-    ''' Summary description for WinForm.
+    ''' Main form for the HelloDK sample (ActiveX/COM wrapper variant).
+    ''' Hosts the AxTGIS_ViewerWnd map control (ActiveX host) and toolbar buttons
+    ''' that demonstrate the fundamental TatukGIS DK API operations.
     ''' </summary>
     Public Class WinForm
         Inherits System.Windows.Forms.Form
 
+        ' "Open project" button - loads the sample world shapefile
         Friend WithEvents btnOpen As Button
+        ' "Zooming" button - enables rubber-band zoom interaction
         Friend WithEvents btnZoom As Button
+        ' "Dragging" button - enables pan/drag interaction
         Friend WithEvents btnDrag As Button
+        ' "Selecting" button - enables click-to-select interaction
         Friend WithEvents btnSelect As Button
+        ' "Create Shape" button - adds an editable layer with a sample polygon
         Friend WithEvents btnCreate As Button
+        ' "Find Shape" button - runs DE-9IM spatial containment query
         Friend WithEvents btnFind As Button
+        ' The central GIS map viewer control (ActiveX host wrapper)
         Friend WithEvents GIS As AxTatukGIS_XDK11.AxTGIS_ViewerWnd
-        ''' <summary>
-        ''' Required designer variable.
-        ''' </summary>
+
+        ''' <summary>Required designer variable.</summary>
         Private components As System.ComponentModel.IContainer
 
         Public Sub New()
-            '
-            ' Required for Windows Form Designer support
-            '
             InitializeComponent()
-
-            '
-            ' TODO: Add any constructor code after InitializeComponent call
-            '
         End Sub
 
-        ''' <summary>
-        ''' Clean up any resources being used.
-        ''' </summary>
+        ''' <summary>Clean up any resources being used.</summary>
         Protected Overloads Overrides Sub Dispose(ByVal disposing As Boolean)
             If disposing Then
                 If Not components Is Nothing Then
@@ -155,11 +176,11 @@ Namespace DK.WinForms.VB
         End Sub
 #End Region
 
+        ' Helper instance: TGIS_Utils provides static-style utilities (point construction,
+        ' coordinate helpers) through an instance in the ActiveX/COM wrapper.
         Dim GisUtils As New TGIS_Utils()
 
-        ''' <summary>
-        ''' The main entry point for the application.
-        ''' </summary>
+        ''' <summary>Application entry point.</summary>
         <STAThread>
         Shared Sub Main()
             Application.EnableVisualStyles()
@@ -171,142 +192,208 @@ Namespace DK.WinForms.VB
 
         End Sub
 
+        ''' <summary>
+        ''' "Open project" button click handler.
+        ''' Opens the WorldDCW world Shapefile from the DK sample data directory and
+        ''' loads it into the viewer. After opening, the mode is set to Select so
+        ''' the user can immediately click on features.
+        ''' </summary>
         Private Sub btnOpen_Click(sender As Object, e As EventArgs) Handles btnOpen.Click
-            ''Open a project
             GIS.Open(GisUtils.GisSamplesDataDirDownload() + "\\World\\WorldDCW\\world.shp")
             GIS.Mode = TGIS_ViewerMode.Select
         End Sub
 
+        ''' <summary>
+        ''' "Zooming" button click handler.
+        ''' Switches the viewer to Zoom mode. In this mode the left mouse button
+        ''' draws a rubber-band rectangle to zoom into a region; the right button
+        ''' zooms out.
+        ''' </summary>
         Private Sub btnZoom_Click(sender As Object, e As EventArgs) Handles btnZoom.Click
-            ''check if viewer is not empty, if is then exit
+            ' Do nothing if no layers are loaded
             If GIS.IsEmpty Then Return
-            ''set "Zoom" mode on viewer
             GIS.Mode = TGIS_ViewerMode.Zoom
         End Sub
 
+        ''' <summary>
+        ''' "Dragging" button click handler.
+        ''' Switches the viewer to Drag mode, allowing the user to pan the map
+        ''' by clicking and dragging with the mouse.
+        ''' </summary>
         Private Sub btnDrag_Click(sender As Object, e As EventArgs) Handles btnDrag.Click
-            ''check if viewer is not empty, if is then exit
+            ' Do nothing if no layers are loaded
             If GIS.IsEmpty Then Return
-            ''set "Drag" mode on viewer
             GIS.Mode = TGIS_ViewerMode.Drag
         End Sub
 
+        ''' <summary>
+        ''' "Create Shape" button click handler.
+        ''' Creates a new in-memory TGIS_LayerVector named "edit layer", gives it a
+        ''' transparent fill with a blue outline, then adds a single quadrilateral
+        ''' polygon to it. This layer is not backed by a file.
+        '''
+        ''' Note (ActiveX): TGIS_Color static members are accessed as instance properties
+        ''' via "(New TGIS_Color).Blue" rather than the managed "TGIS_Color.Blue".
+        ''' </summary>
         Private Sub btnCreateShape_Click(sender As Object, e As EventArgs) Handles btnCreate.Click
             Dim ll As TGIS_LayerVector
             Dim shp As TGIS_Shape
 
-            '' lets find if such layer already exists
+            ' Guard: if the edit layer already exists, do nothing (idempotent)
             ll = CType(GIS.Get("edit layer"), TGIS_LayerVector)
             If Not ll Is Nothing Then Return
 
-
-            '' create a New layer And add it to the viewer
+            ' Create a new in-memory vector layer and register it with the viewer
             ll = New TGIS_LayerVector()
             ll.Name = "edit layer"
-            ll.CS = GIS.CS '' same coordinate system As a viewer
+            ' Inherit the viewer's coordinate system so coordinates are interpreted correctly
+            ll.CS = GIS.CS
 
-            '' making inside of polygon transparent with blue border
+            ' Style: transparent fill (Clear pattern) with a solid blue outline,
+            ' so the underlying world layer remains visible through the polygon
             ll.Params.Area.OutlineColor = (New TGIS_Color).Blue
             ll.Params.Area.Pattern = TGIS_BrushStyle.Clear
 
-            '' add layer to the viewer
+            ' Register the layer with the viewer; it will appear on top of existing layers
             GIS.Add(ll)
 
-            '' create a shape And add it to polygon
+            ' Create a new Polygon shape inside the layer
             shp = ll.CreateShape(TGIS_ShapeType.Polygon)
 
-            '' we group operation together 
+            ' Lock(Extent) batches vertex additions so the bounding box is recalculated
+            ' only once when Unlock is called, improving performance for bulk edits
             shp.Lock(TGIS_Lock.Extent)
+
+            ' AddPart starts the first ring of the polygon; a shape can have multiple
+            ' parts (e.g., islands or holes in a multi-polygon)
             shp.AddPart()
 
-            '' add some veritices
+            ' Add the four corner vertices of the polygon (coordinates in the map's CS).
+            ' GisUtils.GisPoint constructs a TGIS_Point from x/y values (COM wrapper helper).
             shp.AddPoint(GisUtils.GisPoint(10, 10))
             shp.AddPoint(GisUtils.GisPoint(10, 80))
             shp.AddPoint(GisUtils.GisPoint(80, 90))
             shp.AddPoint(GisUtils.GisPoint(90, 10))
 
-            '' unlock operation, close shape if necessary
+            ' Unlock finalises the shape geometry: recalculates extents and closes
+            ' the polygon ring automatically if the first and last points differ
             shp.Unlock()
 
-            '' And now refresh map
+            ' Redraw the entire map canvas to show the newly added polygon
             GIS.InvalidateWholeMap()
         End Sub
 
+        ''' <summary>
+        ''' "Find Shape" button click handler.
+        ''' Uses DE-9IM (Dimensionally Extended 9-Intersection Model) spatial
+        ''' relationship to find all world features fully contained inside the
+        ''' polygon created by btnCreateShape_Click.
+        '''
+        ''' The DE-9IM matrix "T*****FF*" encodes the "contains" relationship:
+        '''   - 'T' at position [0]: interiors must intersect (non-empty)
+        '''   - "FF" at positions [6,7]: the query shape's boundary and exterior
+        '''     must NOT intersect the target shape's interior - i.e. the target
+        '''     lies entirely within the query polygon.
+        '''
+        ''' An additional SQL LIKE filter restricts results to features whose
+        ''' 'label' field starts with the letter 's'.
+        '''
+        ''' Note (ActiveX): the Loop method is exposed as Loop_4 in the COM wrapper
+        ''' to disambiguate the overload that takes (Extent, SQL, Shape, DE9IM) arguments.
+        ''' </summary>
         Private Sub btnFind_Click(sender As Object, e As EventArgs) Handles btnFind.Click
             Dim ll As TGIS_LayerVector
             Dim lv As TGIS_LayerVector
             Dim tmpShp As TGIS_Shape
             Dim selShp As TGIS_Shape
 
-            ''get layer from the viewer
+            ' The edit layer must exist (created by btnCreateShape_Click) to provide
+            ' the selection polygon; exit early if it has not been created yet
             ll = CType(GIS.Get("edit layer"), TGIS_LayerVector)
             If ll Is Nothing Then Return
 
-            '' lets get a layer with world shape
-            '' names are constructed based on layer name
+            ' Retrieve the world layer - its name is derived from the filename ('world')
             lv = CType(GIS.Get("world"), TGIS_LayerVector)
 
-            ''deselect selected shapes
+            ' Clear any previous selection on the world layer before applying the new one
             lv.DeselectAll()
 
-            '' And we need a created shape, with we want   
-            '' to use as selection shape
-            selShp = ll.GetShape(1) '' just a first shape form the layer
+            ' Retrieve the first (and only) shape from the edit layer to use as
+            ' the spatial query boundary
+            selShp = ll.GetShape(1) ' just the first shape from the layer
 
-            '' for file based layer we should pin shape to memory
-            '' otherwise it should be discarded 
+            ' MakeEditable pins the shape into memory so it survives the subsequent
+            ' iteration; file-backed shapes are otherwise evicted from cache
             selShp = selShp.MakeEditable()
 
-            '' so now we search for all shapes with DE9-IM relationship
-            '' which labels starts with 's' (with use of SQL syntax)
-            '' in this case we find "T*****FF*" contains relationship
-            '' which means that we will find only shapes inside the polygon
+            ' Loop over all shapes in the world layer whose bounding box overlaps
+            ' selShp.Extent, whose 'label' field matches the SQL pattern 's%', AND
+            ' whose DE-9IM relationship with selShp satisfies "T*****FF*" (Contains).
+            ' The ActiveX wrapper exposes this overload as Loop_4.
             For Each tmpShp In lv.Loop_4(selShp.Extent, "label LIKE 's%'", selShp, "T*****FF*")
                 tmpShp.IsSelected = True
             Next
 
-            '' And now refresh map
+            ' Force a full map redraw to show the newly selected shapes highlighted
             GIS.InvalidateWholeMap()
         End Sub
 
+        ''' <summary>
+        ''' TapSimple event handler - fired on every single mouse click on the viewer.
+        ''' When the viewer is in Select mode, this converts the click position from
+        ''' screen pixels to map coordinates, finds the nearest shape within a
+        ''' tolerance of 5 pixels, and toggles its selection state.
+        '''
+        ''' Note (ActiveX): the event args type is
+        ''' ITGIS_ViewerWndEvents_TapSimpleEventEvent (COM event interface).
+        ''' GisUtils.Point constructs a TPoint from integer x/y coordinates.
+        ''' GIS.Items.Item(i) is used instead of GIS.Items[i].
+        ''' </summary>
         Private Sub GIS_TapSimpleEvent(sender As Object, e As AxTatukGIS_XDK11.ITGIS_ViewerWndEvents_TapSimpleEventEvent) Handles GIS.TapSimpleEvent
             Dim shp As TGIS_Shape
             Dim ptg As TGIS_Point
             Dim lv As TGIS_LayerVector
             Dim precision As Double
 
-            '' ignore clicking if mode Is other then select
+            ' Ignore taps when the viewer is not in Select mode
             If Not GIS.Mode = TGIS_ViewerMode.Select Then Return
 
-            '' convert screen coordinates to map coordinates
+            ' Convert screen pixel coordinates to geographic map coordinates.
+            ' ScreenToMap accounts for the current zoom level and pan offset.
+            ' GisUtils.Point wraps the integer x/y into a TPoint for the COM wrapper.
             ptg = GIS.ScreenToMap(GisUtils.Point(e.X, e.Y))
 
-            ''get layer from the viewer
+            ' Get the world layer to manage its selection state.
+            ' COM collections use .Item(index) instead of indexer syntax.
             lv = CType(GIS.Items.Item(0), TGIS_LayerVector)
 
-            '' calculate precision of location as 5 pixels
+            ' Compute the hit-test tolerance: 5 screen pixels expressed in map units.
+            ' Dividing by Zoom converts pixels to the map's coordinate unit.
             precision = 5 / GIS.Zoom
 
-            '' let's try to locate a selected shape on the map
+            ' Search all layers for the topmost shape within 'precision' of the click point
             shp = CType(GIS.Locate(ptg, precision), TGIS_Shape)
 
-            '' Not found?
+            ' If no shape was found near the click point, do nothing
             If shp Is Nothing Then Return
 
-            ''deselect selected shapes
+            ' Clear any previously selected shapes before applying the new selection
             lv.DeselectAll()
 
-            '' mark shape as selected
+            ' Toggle selection: clicking a selected shape deselects it, and vice versa
             shp.IsSelected = Not shp.IsSelected
 
-            '' And refresh a map
+            ' Repaint the map to reflect the updated selection highlight
             GIS.InvalidateWholeMap()
         End Sub
 
+        ''' <summary>
+        ''' "Selecting" button click handler.
+        ''' Switches the viewer to Select mode so clicks toggle shape selection.
+        ''' </summary>
         Private Sub btnSelect_Click(sender As Object, e As EventArgs) Handles btnSelect.Click
-            ''check if viewer is not empty, if is then exit
+            ' Do nothing if no layers are loaded
             If GIS.IsEmpty Then Return
-            ''set "Select" mode on viewer
             GIS.Mode = TGIS_ViewerMode.Select
         End Sub
 

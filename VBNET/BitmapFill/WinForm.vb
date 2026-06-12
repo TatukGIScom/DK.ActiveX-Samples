@@ -8,9 +8,33 @@ Imports System.Data
 Imports TatukGIS_XDK11
 
 Namespace BitmapFill
-    ''' <summary>
-    ''' Summary description for WinForm.
-    ''' </summary>
+    ' BitmapFill sample — demonstrates per-shape bitmap fill using a custom PaintShapeEvent callback.
+    '
+    ' What the sample shows:
+    '   - Loading a vector shapefile (California Counties) into the GIS viewer
+    '   - Implementing custom shape rendering via PaintShapeEvent callback
+    '   - Assigning per-shape bitmap textures based on attribute values
+    '   - Using combo boxes to switch between different rendering criteria
+    '     (population density vs. raw population)
+    '   - Toggling feature labels (none, FIPS code, name) dynamically
+    '   - Five different texture bitmaps demonstrating visual variety
+    '   - Integration of bitmap resources with shape rendering pipeline
+    '
+    ' ActiveX-specific implementation details:
+    '   - The viewer is an AxTGIS_ViewerWnd COM control; GIS.Get() returns TGIS_LayerVector via CType
+    '   - PaintShapeEvent callback signature is (ByRef Translated As Boolean, Shape As TGIS_Shape)
+    '   - Bitmaps must be converted to IPictureDisp via GetIPictureDispFromPicture
+    '   - The layer is held in a separate EventLayer field for AddHandler with COM events
+    '
+    ' Key TatukGIS API concepts shown here:
+    '   TGIS_ViewerWnd              - main visual map control (ActiveX COM version)
+    '   TGIS_LayerVector            - vector layer with custom paint callbacks
+    '   TGIS_LayerSHP               - ESRI Shapefile layer (California Counties)
+    '   PaintShapeEvent callback    - custom per-shape rendering hook
+    '   TGIS_Shape                  - individual geographic feature
+    '   TGIS_Params.Marker          - shape visualization parameters
+    '   IPictureDisp                - COM bitmap interface
+    '   Shape attributes            - field-based rendering criteria
     Public Class WinForm
         Inherits System.Windows.Forms.Form
         ''' <summary>
@@ -292,6 +316,7 @@ Namespace BitmapFill
             Application.Run(New WinForm())
         End Sub
 
+        ''' <summary>Loads the California Counties shapefile, stores it in EventLayer for COM event wiring, and sets the paint callback.</summary>
         Private Sub WinForm_Load(ByVal sender As Object, ByVal e As System.EventArgs) Handles MyBase.Load
 
             ' add states layer
@@ -312,6 +337,11 @@ Namespace BitmapFill
             ComboLabels.SelectedIndex = 0
         End Sub
 
+        ''' <summary>
+        ''' Custom per-shape paint callback.  Assigns one of five texture bitmaps (converted to IPictureDisp)
+        ''' to the county fill based on the active statistic (density or population), then calls Shape.Draw.
+        ''' Sets Translated = True to signal that the shape has been handled.
+        ''' </summary>
         Private Sub PaintShape(ByRef Translated As Boolean, Shape As TGIS_Shape)
             Translated = True
 
@@ -382,6 +412,7 @@ Namespace BitmapFill
             Shape.Params.Area.Bitmap.NativeBitmap = oldBitmap
         End Sub
 
+        ''' <summary>Toggles county labels between none, FIPS code (CNTYIDFP), and name (NAME).</summary>
         Private Sub ComboLabels_SelectedIndexChanged(ByVal sender As Object, ByVal e As System.EventArgs) Handles ComboLabels.SelectedIndexChanged
             Dim ll As TGIS_LayerVector
 
@@ -401,6 +432,7 @@ Namespace BitmapFill
             GIS.InvalidateWholeMap()
         End Sub
 
+        ''' <summary>Handles Full Extent, Zoom In, and Zoom Out toolbar button clicks.</summary>
         Private Sub toolBar1_ButtonClick(ByVal sender As Object, ByVal e As System.Windows.Forms.ToolBarButtonClickEventArgs) Handles toolBar1.ButtonClick
             Select Case toolBar1.Buttons.IndexOf(e.Button)
         ' btnFullExt
@@ -417,6 +449,7 @@ Namespace BitmapFill
             End Select
         End Sub
 
+        ''' <summary>Redraws the map when the statistic mode (population / density) changes.</summary>
         Private Sub ComboStatistic_SelectedIndexChanged(ByVal sender As Object, ByVal e As System.EventArgs) Handles ComboStatistic.SelectedIndexChanged
             GIS.InvalidateWholeMap()
         End Sub

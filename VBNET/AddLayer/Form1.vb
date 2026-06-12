@@ -1,17 +1,49 @@
+'=============================================================================
+' This source code is a part of TatukGIS Developer Kernel.
+'=============================================================================
+' AddLayer Sample - Demonstrates how to programmatically add vector layers
+' to a TatukGIS map viewer.
+'
+' Key concepts illustrated:
+'   - Creating a TGIS_LayerSHP instance directly (manual construction) and
+'     adding it to the viewer via GIS.Add.
+'   - Using TGIS_Utils.GisCreateLayer as a convenience factory that resolves
+'     the correct layer class from the file extension automatically.
+'   - Setting visual rendering parameters on a layer (area fill colour, line
+'     width, line outline width, line colour) through the Params property tree.
+'   - Suppressing automatic .ttkgp config-file loading with UseConfig = False
+'     so that the layer always starts with the explicitly assigned params.
+'   - Fitting the viewport to all loaded layers with GIS.FullExtent().
+'   - Switching the viewer interaction mode between Drag (pan) and Select.
+'   - Zooming programmatically by multiplying or dividing the current Zoom value.
+'
+' Note: This variant uses TatukGIS_XDK11 (ActiveX/COM wrapper), while .NET
+' variants use TatukGIS.NDK. The API and layer model are equivalent; only the
+' host technology and namespace differ.
+'
+' Data: DCW (Digital Chart of the World) Shapefiles for Poland, supplied
+' via the TatukGIS sample data directory.
+'=============================================================================
+
 Option Strict Off
 Option Explicit On
 
-Imports TatukGIS_XDK11
+Imports TatukGIS_XDK11   ' ActiveX/COM wrapper: TGIS_LayerSHP, TGIS_Color, TGIS_Utils, TGIS_ViewerMode
 
 Friend Class Form1
     Inherits System.Windows.Forms.Form
+
 #Region "Windows Form Designer generated code "
+    ''' <summary>
+    ''' Initialises the form using the Designer-generated component layout.
+    ''' </summary>
     Public Sub New()
         MyBase.New()
         'This call is required by the Windows Form Designer.
         InitializeComponent()
     End Sub
-    'Form overrides dispose to clean up the component list.
+
+    ''' <summary>Clean up any resources being used.</summary>
     Protected Overloads Overrides Sub Dispose(ByVal Disposing As Boolean)
         If Disposing Then
             If Not components Is Nothing Then
@@ -20,22 +52,32 @@ Friend Class Form1
         End If
         MyBase.Dispose(Disposing)
     End Sub
+
     'Required by the Windows Form Designer
     Private components As System.ComponentModel.IContainer
+
     Public ToolTip1 As System.Windows.Forms.ToolTip
     'NOTE: The following procedure is required by the Windows Form Designer
     'It can be modified using the Windows Form Designer.
     'Do not modify it using the code editor.
+
+    ' -------------------------------------------------------------------------
+    ' Designer-managed fields – layout is configured in InitializeComponent().
+    ' -------------------------------------------------------------------------
     Friend WithEvents ImageList1 As System.Windows.Forms.ImageList
     Friend WithEvents ToolBar1 As System.Windows.Forms.ToolBar
-    Friend WithEvents ToolBarButton1 As System.Windows.Forms.ToolBarButton
-    Friend WithEvents ToolBarButton2 As System.Windows.Forms.ToolBarButton
-    Friend WithEvents ToolBarButton3 As System.Windows.Forms.ToolBarButton
+    Friend WithEvents ToolBarButton1 As System.Windows.Forms.ToolBarButton   ' Full Extent button
+    Friend WithEvents ToolBarButton2 As System.Windows.Forms.ToolBarButton   ' Zoom In button
+    Friend WithEvents ToolBarButton3 As System.Windows.Forms.ToolBarButton   ' Zoom Out button
+    ''' <summary>Checkbox that toggles between Drag (pan) and Select interaction modes.</summary>
     Friend WithEvents CheckDrag As System.Windows.Forms.CheckBox
-    Friend WithEvents ToolBarButton4 As System.Windows.Forms.ToolBarButton
+    Friend WithEvents ToolBarButton4 As System.Windows.Forms.ToolBarButton   ' Separator
+    ''' <summary>
+    ''' The TatukGIS ActiveX viewer control.  All layers are added to this component.
+    ''' AxTGIS_ViewerWnd is the COM-interop wrapper generated for the XDK11 OCX.
+    ''' </summary>
     Friend WithEvents GIS As AxTatukGIS_XDK11.AxTGIS_ViewerWnd
     Friend WithEvents StatusBar1 As System.Windows.Forms.StatusBar
-
 
     <System.Diagnostics.DebuggerStepThrough()> Private Sub InitializeComponent()
         Me.components = New System.ComponentModel.Container()
@@ -137,21 +179,46 @@ Friend Class Form1
     End Sub
 #End Region
 
-
+    ' GisUtils provides helper methods such as GisSamplesDataDirDownload,
+    ' which resolves the root path where TatukGIS sample datasets are stored.
     Dim GisUtils As New TGIS_Utils()
 
+    ' -------------------------------------------------------------------------
+    ' Standalone helper stubs – these are called from ToolBar1_ButtonClick
+    ' (not wired as individual event handlers).
+    ' -------------------------------------------------------------------------
+
+    ''' <summary>
+    ''' Resets the viewport so that all loaded layers fit inside the viewer window.
+    ''' </summary>
     Private Sub ButtonFullExtent_Click()
         GIS.FullExtent()
     End Sub
 
+    ''' <summary>
+    ''' Doubles the current zoom level, shrinking the visible area by half.
+    ''' </summary>
     Private Sub ButtonZoomIn_Click()
         GIS.Zoom = GIS.Zoom * 2
     End Sub
 
+    ''' <summary>
+    ''' Halves the current zoom level, doubling the visible area.
+    ''' </summary>
     Private Sub ButtonZoomOut_Click()
         GIS.Zoom = GIS.Zoom / 2
     End Sub
 
+    ''' <summary>
+    ''' Toggles the viewer's active interaction mode.
+    ''' <para>
+    ''' TGIS_ViewerMode.Drag   – left-click and drag pans the map canvas.
+    ''' </para>
+    ''' <para>
+    ''' TGIS_ViewerMode.Select – left-click picks the topmost feature under
+    ''' the cursor.
+    ''' </para>
+    ''' </summary>
     Private Sub CheckDrag_CheckStateChanged(ByVal sender As Object, ByVal e As System.EventArgs) Handles CheckDrag.CheckStateChanged
         If CheckDrag.CheckState Then
             GIS.Mode = TGIS_ViewerMode.Drag
@@ -161,37 +228,78 @@ Friend Class Form1
 
     End Sub
 
+    ''' <summary>
+    ''' Handles the Form.Load event.  Creates and configures two Shapefile
+    ''' layers – a country polygon layer and a rivers polyline layer – then
+    ''' adds them to the GIS viewer and fits the viewport to their combined
+    ''' extent.
+    ''' </summary>
     Private Sub Form1_Load(ByVal eventSender As System.Object, ByVal eventArgs As System.EventArgs) Handles MyBase.Load
         Dim ll As TGIS_LayerSHP
-        Dim c As New TGIS_Color()
+        Dim c As New TGIS_Color()   ' Used to resolve named colour constants from the COM type
 
+        ' --- Layer 1: Country outline (polygon / area layer) ---
+        ' Construct the Shapefile layer directly.  The geometry type (polygon)
+        ' is determined from the .shp file header when the layer is first accessed.
         ll = New TGIS_LayerSHP()
+
+        ' GisSamplesDataDirDownload returns the path where TatukGIS sample
+        ' datasets were installed or downloaded (configured by the DK installer).
         Dim p As String = GisUtils.GisSamplesDataDirDownload & "\World\Countries\Poland\DCW\country.shp"
         ll.Path = GisUtils.GisSamplesDataDirDownload & "\World\Countries\Poland\DCW\country.shp"
+
+        ' A human-readable label used in legends and layer lists.
         ll.Name = "states"
 
+        ' GIS.Add appends the layer to the internal stack.  Layers added earlier
+        ' are rendered first (drawn at the bottom of the visual stack).
         GIS.Add(ll)
 
+        ' --- Layer 2: Rivers (polyline layer) ---
+        ' A second TGIS_LayerSHP instance is created directly here rather than
+        ' through the GisCreateLayer factory, which is equally valid.
         ll = New TGIS_LayerSHP()
         ll.Path = GisUtils.GisSamplesDataDirDownload & "\World\Countries\Poland\DCW\lwaters.shp"
         ll.Name = "rivers"
+
+        ' UseConfig = False prevents the DK from loading a previously saved
+        ' .ttkgp configuration file, so the rendering parameters below
+        ' always take effect regardless of any saved session state.
         ll.UseConfig = False
+
+        ' OutlineWidth = 0 removes the contrasting halo drawn around lines,
+        ' yielding a clean single-colour stroke.
         ll.Params.Line.OutlineWidth = 0
+
+        ' Width is in screen pixels at the reference zoom level.
         ll.Params.Line.Width = 3
+
+        ' c.Blue resolves the blue colour constant through the COM TGIS_Color object.
+        ' (In the NDK variant this is the static TGIS_Color.Blue property.)
         ll.Params.Line.Color = c.Blue
+
         GIS.Add(ll)
 
+        ' Zoom the viewport to the combined bounding box of all layers so the
+        ' full map is visible immediately after load.
         GIS.FullExtent()
 
     End Sub
 
+    ''' <summary>
+    ''' Dispatches toolbar button clicks by position index within the toolbar.
+    ''' Index 0 = Full Extent, 1 = Zoom In, 2 = Zoom Out.
+    ''' </summary>
     Private Sub ToolBar1_ButtonClick(ByVal sender As Object, ByVal e As System.Windows.Forms.ToolBarButtonClickEventArgs) Handles ToolBar1.ButtonClick
         Select Case ToolBar1.Buttons.IndexOf(e.Button)
             Case 0
+                ' Reset the viewport to show all loaded layers at once.
                 GIS.FullExtent()
             Case 1
+                ' Double the zoom level – the visible area shrinks by half.
                 GIS.Zoom = GIS.Zoom * 2
             Case 2
+                ' Halve the zoom level – the visible area doubles.
                 GIS.Zoom = GIS.Zoom / 2
         End Select
     End Sub

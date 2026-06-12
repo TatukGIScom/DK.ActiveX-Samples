@@ -8,9 +8,33 @@ Imports TatukGIS_XDK11
 
 Namespace PixelOperations
 
-    ''' <summary>
-    ''' Summary description for WinForm.
-    ''' </summary>
+    ' PixelOperations sample — demonstrates basic raster pixel manipulation and analysis (VB.NET ActiveX/COM).
+    '
+    ' What the sample shows:
+    '   - Loading a DEM (Digital Elevation Model) raster layer (ArcInfo ADF format) into the viewer
+    '   - Creating a hillshade visualization from elevation data via TGIS_LayerPixel.Hillshade
+    '   - Generating contour lines (isolines) from raster elevation data via TGIS_Topology.ContourLines
+    '   - Creating a slope map showing steepness analysis from DEM
+    '   - Creating an aspect map showing downhill direction (N, NE, E, etc.) from DEM
+    '   - Querying individual pixel values at clicked locations
+    '   - Applying colour ramps to raster layers for visual analysis
+    '   - Displaying layer metadata and pixel statistics
+    '   - Using a legend control to show the rendered layer and styling
+    '   - Handling raster layer rendering via TGIS_LayerPixel
+    '   - Using pixel operation events via COM interop for real-time pixel access
+    '   - Supporting ActiveX-based COM component interaction
+    '
+    ' Key TatukGIS API concepts shown here:
+    '   TGIS_ViewerWnd              - main visual map control (COM wrapper)
+    '   TGIS_LayerPixel             - raster/pixel layer for DEM data (COM wrapper)
+    '   TGIS_LayerADF               - ArcInfo Grid format loader (COM wrapper)
+    '   TGIS_LayerPixel.Hillshade   - shaded relief rendering from elevation
+    '   TGIS_Topology.ContourLines  - extract isolines from raster elevation
+    '   TGIS_LayerPixel.Slope       - compute slope steepness from DEM
+    '   TGIS_LayerPixel.Aspect      - compute flow direction aspect from DEM
+    '   TGIS_Params                 - rendering parameters and colour ramps
+    '   TGIS_ControlLegend          - legend panel for layer display (COM wrapper)
+    '   PixelOperationEvent         - COM event for pixel-level access during operations
     Public Class WinForm
         Inherits System.Windows.Forms.Form
 

@@ -1,3 +1,51 @@
+'=============================================================================
+' This source code is a part of TatukGIS Developer Kernel.
+'=============================================================================
+'
+' GeoCoding Sample - VB.NET / ActiveX (TatukGIS XDK11)
+' =====================================================
+' Demonstrates address geocoding and shortest-path routing using the TatukGIS
+' ActiveX (XDK11) COM wrapper.
+'
+' Geocoding translates a human-readable address string (e.g. "Chrysler 1345")
+' into geographic coordinates by matching it against street-range attribute
+' fields stored in a vector layer.  The TGIS_Geocoding class performs this
+' matching entirely on the client side using the loaded shapefile — no
+' external service is needed.
+'
+' Routing finds the shortest path between two geocoded points using
+' TGIS_ShortestPath, which builds an in-memory Dijkstra graph from the road
+' network.  The resulting path segments are visualised by copying them into a
+' separate in-memory "RouteDisplay" layer rendered in red, with green/red
+' point markers for the start and end positions.
+'
+' This variant uses the ActiveX/COM interop binding (AxTatukGIS_XDK11) instead
+' of the managed NDK assembly.  The API surface is equivalent but:
+'   - Objects such as TGIS_Geocoding and TGIS_ShortestPath require an explicit
+'     Create_() call after construction (COM two-phase initialisation).
+'   - TGIS_Color and other value types are accessed via New instances.
+'   - GIS_ControlScale.GIS_Viewer is set by passing GIS.GetOcx() (the underlying
+'     IDispatch pointer) rather than the managed TGIS_ViewerWnd object.
+'
+' Key concepts shown:
+'   - Opening a TatukGIS project (.ttkproject) and retrieving a named layer
+'   - Constructing TGIS_Geocoding (COM) with TIGER/Line address-range field mappings
+'   - Using TGIS_Geocoding.Parse to resolve typed addresses to coordinates
+'   - Building a TGIS_ShortestPath graph with per-link-type cost modifiers
+'   - Handling the LinkTypeEvent callback to classify road segments by MTFCC code
+'   - Drawing route results and address markers into a TGIS_LayerVector overlay
+'
+' Data used:
+'   California.ttkproject — a TatukGIS project referencing US Census TIGER/Line
+'   street data.  Relevant attribute fields:
+'     FULLNAME  — full street name
+'     LFROMADD  — address range start, left side of street
+'     LTOADD    — address range end, left side of street
+'     RFROMADD  — address range start, right side of street
+'     RTOADD    — address range end, right side of street
+'     MTFCC     — MAF/TIGER Feature Class Code; "S1400"+ = local/residential road
+'=============================================================================
+
 Imports Microsoft.VisualBasic
 Imports System
 Imports System.Drawing
@@ -5,54 +53,64 @@ Imports System.Collections
 Imports System.ComponentModel
 Imports System.Windows.Forms
 Imports System.Data
-Imports TatukGIS_XDK11
+Imports TatukGIS_XDK11  ' TatukGIS ActiveX/COM interop assembly
 
 Namespace Geocoding
     ''' <summary>
-    ''' Summary description for WinForm.
+    ''' Main application form for the GeoCoding &amp; Routing ActiveX sample.
+    ''' Hosts an <see cref="AxTatukGIS_XDK11.AxTGIS_ViewerWnd"/> (COM-hosted viewer)
+    ''' displaying California street data and provides address resolution and
+    ''' shortest-path route finding.
     ''' </summary>
     Public Class WinForm
         Inherits System.Windows.Forms.Form
-        ''' <summary>
-        ''' Required designer variable.
-        ''' </summary>
-        Private components As System.ComponentModel.IContainer
-        Private panel1 As System.Windows.Forms.Panel
-        Private memRoute As System.Windows.Forms.TextBox
-        Private groupBox1 As System.Windows.Forms.GroupBox
-        Private lblSmallRoads As System.Windows.Forms.Label
-        Private trkSmallRoads As System.Windows.Forms.TrackBar
-        Private lblHighways As System.Windows.Forms.Label
-        Private trkHighways As System.Windows.Forms.TrackBar
-        Private lblAddrFrom As System.Windows.Forms.Label
-        Private edtAddrFrom As System.Windows.Forms.TextBox
-        Private lblAddrTo As System.Windows.Forms.Label
-        Private edtAddrTo As System.Windows.Forms.TextBox
-        Private WithEvents btnResolve As System.Windows.Forms.Button
-        Private WithEvents btnRoute As System.Windows.Forms.Button
-        Private GIS As AxTatukGIS_XDK11.AxTGIS_ViewerWnd
-        Private layerSrc As TGIS_LayerVector
-        Private layerRoute As TGIS_LayerVector
-        Private geoObj As TGIS_Geocoding
-        Private rtrObj As TGIS_ShortestPath
-        Private toolTip1 As System.Windows.Forms.ToolTip
-        Private GIS_ControlScale As AxTatukGIS_XDK11.AxTGIS_ControlScale
 
+        ' ------------------------------------------------------------------ '
+        '  Designer-managed fields (do not modify names/types)                '
+        ' ------------------------------------------------------------------ '
+
+        ''' <summary>Required designer variable.</summary>
+        Private components As System.ComponentModel.IContainer
+
+        Private panel1 As System.Windows.Forms.Panel           ' Right-hand control panel
+        Private memRoute As System.Windows.Forms.TextBox       ' Read-only directions text area
+        Private groupBox1 As System.Windows.Forms.GroupBox     ' Groups routing parameter controls
+        Private lblSmallRoads As System.Windows.Forms.Label    ' Label for trkSmallRoads
+        Private trkSmallRoads As System.Windows.Forms.TrackBar ' Local-road preference slider (1–10)
+        Private lblHighways As System.Windows.Forms.Label      ' Label for trkHighways
+        Private trkHighways As System.Windows.Forms.TrackBar   ' Highway preference slider (1–10)
+        Private lblAddrFrom As System.Windows.Forms.Label      ' Label for edtAddrFrom
+        Private edtAddrFrom As System.Windows.Forms.TextBox    ' Start address input
+        Private lblAddrTo As System.Windows.Forms.Label        ' Label for edtAddrTo
+        Private edtAddrTo As System.Windows.Forms.TextBox      ' End address input
+        Private WithEvents btnResolve As System.Windows.Forms.Button  ' Resolve start address
+        Private WithEvents btnRoute As System.Windows.Forms.Button    ' Find shortest route
+        Private GIS As AxTatukGIS_XDK11.AxTGIS_ViewerWnd              ' TatukGIS ActiveX viewer
+        Private layerSrc As TGIS_LayerVector                           ' Source streets layer
+        Private layerRoute As TGIS_LayerVector                         ' In-memory route display layer
+        Private geoObj As TGIS_Geocoding                               ' Geocoding engine (COM)
+        Private rtrObj As TGIS_ShortestPath                            ' Routing engine (COM, Dijkstra)
+        Private toolTip1 As System.Windows.Forms.ToolTip               ' Tooltip provider for address boxes
+        Private GIS_ControlScale As AxTatukGIS_XDK11.AxTGIS_ControlScale ' Scale-bar overlay (COM)
+
+        ''' <summary>
+        ''' Initialises the form and wires up tooltip hints on the address text boxes.
+        ''' The hints show example address strings that the California data set supports.
+        ''' </summary>
         Public Sub New()
             '
             ' Required for Windows Form Designer support
             '
             InitializeComponent()
 
-            '
-            ' TODO: Add any constructor code after InitializeComponent call
-            '
+            ' Provide example address strings as tooltips on the From/To inputs
+            ' so users know what format the geocoder expects.
             toolTip1.SetToolTip(Me.edtAddrFrom, """Pen"", ""Pennsylvania"", ""Penn 12""")
             toolTip1.SetToolTip(Me.edtAddrTo, """Pen"", ""Pennsylvania"", ""Penn 12""")
         End Sub
 
         ''' <summary>
-        ''' Clean up any resources being used.
+        ''' Releases managed and unmanaged resources held by the form.
         ''' </summary>
         Protected Overloads Overrides Sub Dispose(ByVal disposing As Boolean)
             If disposing Then
@@ -224,7 +282,7 @@ Namespace Geocoding
             Me.lblSmallRoads.TabIndex = 0
             Me.lblSmallRoads.Text = "Prefer &local roads"
             '
-            'GIS_ControlScale
+            'GIS_ControlScale  — ActiveX scale-bar control hosted in an AxHost wrapper
             '
             Me.GIS_ControlScale.BackColor = System.Drawing.SystemColors.Control
             Me.GIS_ControlScale.Enabled = True
@@ -234,7 +292,7 @@ Namespace Geocoding
             Me.GIS_ControlScale.Size = New System.Drawing.Size(145, 25)
             Me.GIS_ControlScale.TabIndex = 1
             '
-            'GIS
+            'GIS  — ActiveX viewer hosted inside a WinForms AxHost wrapper
             '
             Me.GIS.Cursor = System.Windows.Forms.Cursors.Default
             Me.GIS.Dock = System.Windows.Forms.DockStyle.Fill
@@ -271,10 +329,13 @@ Namespace Geocoding
         End Sub
 #End Region
 
+        ' TGIS_Utils instance used to resolve the sample data directory and unit lists
+        ' via the COM API (methods are instance-level on the ActiveX binding,
+        ' unlike the shared methods in the managed NDK).
         Dim GisUtils As New TGIS_Utils()
 
         ''' <summary>
-        ''' The main entry point for the application.
+        ''' Application entry point.  Configures visual styles and launches the form.
         ''' </summary>
         <STAThread>
         Shared Sub Main()
@@ -283,30 +344,60 @@ Namespace Geocoding
             Application.Run(New WinForm())
         End Sub
 
+        ''' <summary>
+        ''' Handles the form Load event.
+        ''' Opens the California street project, creates the route-display overlay
+        ''' layer, and initialises the geocoding and routing engines.
+        ''' </summary>
+        ''' <remarks>
+        ''' In the ActiveX binding, <c>TGIS_Geocoding</c> and <c>TGIS_ShortestPath</c>
+        ''' require an explicit <c>Create_()</c> call after <c>New</c> to complete
+        ''' COM object initialisation.
+        ''' <c>GIS.GetOcx()</c> returns the underlying IDispatch pointer needed by
+        ''' controls such as <c>GIS_ControlScale</c> that hold a COM viewer reference.
+        ''' </remarks>
         Private Sub WinForm_Load(ByVal sender As Object, ByVal e As System.EventArgs) Handles MyBase.Load
+            ' Link the scale-bar control to the COM viewer object via IDispatch.
             GIS_ControlScale.GIS_Viewer = GIS.GetOcx()
 
+            ' Open the TatukGIS project which contains the California street data.
             GIS.Open(GisUtils.GisSamplesDataDirDownload() & "Samples\Projects\California.ttkproject")
+
+            ' Retrieve the streets vector layer by name so the geocoding and
+            ' routing engines can operate on its shape and attribute data.
             layerSrc = CType(GIS.Get("streets"), TGIS_LayerVector)
 
             If layerSrc Is Nothing Then
                 Exit Sub
             End If
 
+            ' Zoom to the full extent of the street network on startup.
             GIS.VisibleExtent = layerSrc.Extent
 
-            ' create route layer
+            ' ------------------------------------------------------------------
+            ' Create an in-memory overlay layer for route visualisation.
+            ' UseConfig = False prevents the DK from persisting a style config.
+            ' Red line (Width = -2, negative = device pixels) and 1-px outline.
+            ' ------------------------------------------------------------------
             layerRoute = New TGIS_LayerVector()
             layerRoute.UseConfig = False
             layerRoute.Params.Line.Color = (New TGIS_Color).Red
             layerRoute.Params.Line.Width = -2
             layerRoute.Params.Marker.OutlineWidth = 1
             layerRoute.Name = "RouteDisplay"
-            layerRoute.CS = GIS.CS
+            layerRoute.CS = GIS.CS  ' Must share the viewer's coordinate system
 
             GIS.Add(layerRoute)
 
-            ' create geocoding object, set fields for routing
+            ' ------------------------------------------------------------------
+            ' Configure the geocoding engine with TIGER/Line field mappings.
+            ' COM two-phase initialisation: New allocates, Create_(layer) connects
+            ' to the source layer and prepares the geocoding index.
+            '   Offset    — distance along the segment for the geocoded point.
+            '   RoadName  — attribute field with the full street name.
+            '   LFrom/LTo — address number range, left side of street.
+            '   RFrom/RTo — address number range, right side of street.
+            ' ------------------------------------------------------------------
             geoObj = New TGIS_Geocoding
             geoObj.Create_(layerSrc)
             geoObj.Offset = 0.0001
@@ -316,31 +407,68 @@ Namespace Geocoding
             geoObj.RFrom = "RFROMADD"
             geoObj.RTo = "RTOADD"
 
-            ' create path object and load source layer data
+            ' ------------------------------------------------------------------
+            ' Configure the routing engine.
+            ' COM two-phase initialisation: Create_(viewer) connects the router to
+            ' the map viewer so it can resolve coordinate systems.
+            ' LoadTheData builds the Dijkstra graph from all arc shapes in layerSrc.
+            ' ------------------------------------------------------------------
             rtrObj = New TGIS_ShortestPath
             rtrObj.Create_(GIS.GetOcx())
             AddHandler rtrObj.LinkTypeEvent, AddressOf doLinkType
             rtrObj.LoadTheData(layerSrc)
             rtrObj.RoadName = "FULLNAME"
 
-            GIS_ControlScale.Units = GisUtils.CSUnitsList.ByEPSG(9035) ' mile
+            ' Display the scale bar in miles (EPSG 9035 = statute mile).
+            GIS_ControlScale.Units = GisUtils.CSUnitsList.ByEPSG(9035)
         End Sub
 
+        ''' <summary>
+        ''' Releases geocoding and routing objects when the form loses focus.
+        ''' layerRoute is owned by the viewer and freed automatically.
+        ''' </summary>
         Private Sub WinForm_Leave(ByVal sender As Object, ByVal e As System.EventArgs) Handles MyBase.Leave
             layerRoute = Nothing
             geoObj = Nothing
             rtrObj = Nothing
         End Sub
 
+        ''' <summary>
+        ''' Classifies a road segment as highway (link type 0) or local road (link type 1).
+        ''' Called by <see cref="TGIS_ShortestPath"/> for every arc during graph construction.
+        ''' </summary>
+        ''' <remarks>
+        ''' In the ActiveX binding, the event signature differs slightly from the NDK:
+        ''' the shape is passed as <c>TGIS_ShapeArc</c> and the type as a ByRef Integer
+        ''' rather than through an event-args object.
+        '''
+        ''' MTFCC codes "S1400" and above identify local/residential streets.
+        ''' Codes below "S1400" are interstates, US routes, state routes, etc.
+        ''' </remarks>
         Private Sub doLinkType(Shape As TGIS_ShapeArc, ByRef Type As Integer)
             If Not (Shape.GetField("MTFCC")?.ToString().CompareTo("S1400") < 0) Then
-                '  local roads
+                ' MTFCC >= "S1400" → local/residential road
                 Type = 1
             Else
+                ' MTFCC < "S1400" → highway or major road
                 Type = 0
             End If
         End Sub
 
+        ''' <summary>
+        ''' Handles the Find Route button click.
+        ''' Geocodes both addresses, computes the shortest path between them,
+        ''' and displays the route as a red line with turn-by-turn directions.
+        ''' </summary>
+        ''' <remarks>
+        ''' Cost modifiers derived from the highway/local-road sliders are applied
+        ''' before routing.  The formula maps slider values 1–10 to multipliers
+        ''' 1.0–~0.09 (lower = cheaper = preferred by the router).
+        '''
+        ''' The <c>Compass</c> property encodes turn direction: 0 = straight,
+        ''' 1..3 = right (slight/right/sharp), 4 = U-turn, -1..-3 = left, -4 = left U-turn.
+        ''' Consecutive steps on the same named street are suppressed.
+        ''' </remarks>
         Private Sub btnRoute_Click(ByVal sender As Object, ByVal e As System.EventArgs) Handles btnRoute.Click
             Dim i As Integer
             Dim shp As TGIS_Shape
@@ -350,25 +478,27 @@ Namespace Geocoding
             Dim ang As String
             Dim oldnam As String
 
-            ' calculate wages
+            ' Apply slider-derived cost modifiers.
+            ' CostModifiers(0) = highway cost; CostModifiers(1) = local-road cost.
             rtrObj.CostModifiers(0) = 1 - 1 / 11.0 * trkHighways.Value
             rtrObj.CostModifiers(1) = 1 - 1 / 11.0 * trkSmallRoads.Value
 
-            ' locate shapes meeting query
+            ' Geocode the start address.
+            ' Parse() returns the number of matching candidates; refine if found.
             res = geoObj.Parse(edtAddrFrom.Text, True, True)
-            ' if not found, ask for more details
             If res > 0 Then
                 edtAddrFrom.Text = geoObj.Query(0)
             Else
                 edtAddrFrom.AppendText(" ???")
             End If
 
-            ' remember starting point
+            ' Abort if the start address could not be resolved.
             If res <= 0 Then
                 Return
             End If
-            pt_a = geoObj.Point(0)
+            pt_a = geoObj.Point(0)   ' Geocoded start coordinate
 
+            ' Geocode the end address.
             res = geoObj.Parse(edtAddrTo.Text, True, True)
             If res > 0 Then
                 edtAddrTo.Text = geoObj.Query(0)
@@ -376,44 +506,38 @@ Namespace Geocoding
                 edtAddrTo.AppendText(" ???")
             End If
 
-            ' remember ending point
+            ' Abort if the end address could not be resolved.
             If res <= 0 Then
                 Return
             End If
-            pt_b = geoObj.Point(0)
+            pt_b = geoObj.Point(0)   ' Geocoded end coordinate
 
-            ' set starting and ending position
+            ' UpdateTheData refreshes the graph; Find() computes the shortest path.
+            ' Unproject converts viewer display coordinates to the layer's CS.
             rtrObj.UpdateTheData()
             rtrObj.Find(layerRoute.Unproject(pt_a), layerRoute.Unproject(pt_b))
 
             memRoute.Clear()
-            oldnam = "#$@3eqewe"
+            oldnam = "#$@3eqewe"  ' Sentinel to detect the first direction step
 
-            ' display directions
+            ' Build turn-by-turn directions text.
             ang = ""
             i = 0
             Do While i < rtrObj.ItemsCount
+                ' Map the numeric Compass value to a readable direction abbreviation.
                 Select Case rtrObj.Items(i).Compass
-                    Case 0
-                        ang = "FWD  "
-                    Case 1
-                        ang = "RIGHT"
-                    Case 2
-                        ang = "RIGHT"
-                    Case 3
-                        ang = "RIGHT"
-                    Case 4
-                        ang = "BACK "
-                    Case -1
-                        ang = "LEFT "
-                    Case -2
-                        ang = "LEFT "
-                    Case -3
-                        ang = "LEFT "
-                    Case -4
-                        ang = "BACK "
+                    Case 0  : ang = "FWD  "
+                    Case 1  : ang = "RIGHT"   ' Slight right
+                    Case 2  : ang = "RIGHT"   ' Right
+                    Case 3  : ang = "RIGHT"   ' Sharp right
+                    Case 4  : ang = "BACK "   ' U-turn
+                    Case -1 : ang = "LEFT "   ' Slight left
+                    Case -2 : ang = "LEFT "   ' Left
+                    Case -3 : ang = "LEFT "   ' Sharp left
+                    Case -4 : ang = "BACK "   ' Left U-turn
                 End Select
 
+                ' Suppress consecutive items on the same named street.
                 If oldnam = rtrObj.Items(i).Name Then
                     GoTo Continue1
                 End If
@@ -424,9 +548,10 @@ Continue1:
                 i += 1
             Loop
 
+            ' Clear the route display layer and repopulate with the new path.
             layerRoute.RevertAll()
 
-            ' add shapes of our path to route layer (red)
+            ' Copy each route segment from the source layer into the display layer.
             i = 0
             Do While i < rtrObj.ItemsCount
                 shp = rtrObj.Items(i).Layer.GetShape(rtrObj.Items(i).Uid)
@@ -435,13 +560,13 @@ Continue1:
                 End If
                 layerRoute.AddShape(shp)
                 If i = 0 Then
-                    layerRoute.Extent = shp.Extent
+                    layerRoute.Extent = shp.Extent  ' Seed the bounding extent
                 End If
 Continue2:
                 i += 1
             Loop
 
-            ' mark starting point as green squere
+            ' Place a green point marker at the start position (pt_a).
             shp = layerRoute.CreateShape(TGIS_ShapeType.Point)
             shp.Lock(TGIS_Lock.Extent)
             shp.AddPart()
@@ -449,19 +574,33 @@ Continue2:
             shp.Params.Marker.Color = (New TGIS_Color).Green
             shp.Unlock()
 
-            ' mark starting point as red squere
+            ' Place a red (default) point marker at the end position (pt_b).
             shp = layerRoute.CreateShape(TGIS_ShapeType.Point)
             shp.Lock(TGIS_Lock.Extent)
             shp.AddPart()
             shp.AddPoint(pt_b)
             shp.Unlock()
 
+            ' Zoom to the route bounding box, pulling back slightly (0.7×) for context.
             GIS.Lock()
             GIS.VisibleExtent = layerRoute.Extent
             GIS.Zoom = 0.7 * GIS.Zoom
             GIS.Unlock()
         End Sub
 
+        ''' <summary>
+        ''' Handles the Find Address button click.
+        ''' Geocodes the address typed in <c>edtAddrFrom</c> and highlights all
+        ''' matching street segments on the map with a green point marker at each
+        ''' geocoded coordinate.
+        ''' </summary>
+        ''' <remarks>
+        ''' <c>Parse()</c> returns the number of matching candidates.  Each candidate
+        ''' provides a <c>Query</c> (canonical name), a <c>Uid</c> (primary segment ID),
+        ''' and a <c>UidEx</c> (complementary opposite-side segment ID).
+        ''' A green marker is placed at <c>Point(i)</c>, the interpolated coordinate
+        ''' for the house number along the matched segment.
+        ''' </remarks>
         Private Sub btnResolve_Click(ByVal sender As Object, ByVal e As System.EventArgs) Handles btnResolve.Click
             Dim i As Integer
             Dim r As Integer
@@ -471,9 +610,11 @@ Continue2:
                 Return
             End If
 
+            ' Clear any previously displayed route or address highlights.
             layerRoute.RevertAll()
 
-            ' locate shapes meeting query
+            ' Parse returns the number of matches; r is the last valid index.
+            ' Append "???" if no match was found.
             r = geoObj.Parse(edtAddrFrom.Text, True, True) - 1
             If r <= 0 Then
                 edtAddrFrom.AppendText(" ???")
@@ -481,23 +622,27 @@ Continue2:
 
             i = 0
             Do While i <= r
+                ' Refine the text box to the canonical name of each matched street.
                 edtAddrFrom.Text = geoObj.Query(i)
-                Application.DoEvents()
+                Application.DoEvents()  ' Allow the UI to refresh between results
 
-                ' add found shape to route layer (red color)
+                ' Add the primary matching segment to the route display layer.
                 shp = layerSrc.GetShape(geoObj.Uid(i))
                 layerRoute.AddShape(shp)
 
+                ' Seed the bounding extent from the first matched segment.
                 If i = 0 Then
                     layerRoute.Extent = shp.ProjectedExtent
                 End If
 
+                ' Add the complementary (opposite-side) segment if available.
                 shp = layerSrc.GetShape(geoObj.UidEx(i))
                 If Not shp Is Nothing Then
                     layerRoute.AddShape(shp)
                 End If
 
-                ' mark address as green squere
+                ' Place a green marker at the interpolated geocoded coordinate.
+                ' FromCS converts from the source layer's CS to the route layer's CS.
                 shp = layerRoute.CreateShape(TGIS_ShapeType.Point)
                 shp.Lock(TGIS_Lock.Extent)
                 shp.AddPart()
@@ -506,6 +651,8 @@ Continue2:
                 shp.Unlock()
                 i += 1
             Loop
+
+            ' Zoom to the matched results with a slight zoom-out factor for context.
             GIS.Lock()
             GIS.VisibleExtent = layerRoute.ProjectedExtent
             GIS.Zoom = 0.7 * GIS.Zoom

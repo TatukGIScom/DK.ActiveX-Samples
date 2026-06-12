@@ -1,3 +1,21 @@
+' Zooming - TatukGIS Developer Kernel (DK11) sample (VB.NET / ActiveX wrapper).
+'
+' Demonstrates multiple ways to zoom and navigate a loaded map:
+'   1. Loading a TatukGIS project file (.ttkproject) which bundles all
+'      layer definitions, styles, and coordinate system settings.
+'   2. Full-extent button - zooms the viewer to display all loaded data.
+'   3. Zoom mode - rubber-band rectangle zoom (left click + drag to zoom in,
+'      right click to zoom out by one step).
+'   4. Drag mode - panning by clicking and dragging the map.
+'   5. Mouse wheel zoom - smooth zoom centered on the cursor position using
+'      GIS.ZoomBy(factor, x, y), where the x,y anchor keeps the point under
+'      the cursor stationary while the rest of the map scales around it.
+'
+' ActiveX note: the mouse wheel event is exposed as GIS.MouseWheelEvent with
+' a different argument type (ITGIS_ViewerWndEvents_MouseWheelEvent) and the
+' wheel delta is read from e.WheelDelta instead of e.Delta. The mouse position
+' must be converted from screen to client coordinates via PointToClient.
+
 Imports Microsoft.VisualBasic
 Imports System
 Imports System.Drawing
@@ -9,40 +27,38 @@ Imports TatukGIS_XDK11
 
 Namespace Zooming
     ''' <summary>
-    ''' Summary description for WinForm.
+    ''' Main form for the Zooming sample (ActiveX/COM wrapper variant).
+    ''' Demonstrates viewer navigation: full extent, zoom mode, drag mode,
+    ''' and mouse-wheel zoom anchored to the cursor position.
     ''' </summary>
     Public Class WinForm
         Inherits System.Windows.Forms.Form
-        ''' <summary>
-        ''' Required designer variable.
-        ''' </summary>
+
+        ''' <summary>Required designer variable.</summary>
         Private components As System.ComponentModel.IContainer
         Private WithEvents toolBar1 As System.Windows.Forms.ToolBar
         Private imageList1 As System.Windows.Forms.ImageList
+        ' "Full Extent" toolbar button - zooms to show all loaded data
         Private btnFullExtent As System.Windows.Forms.ToolBarButton
         Private toolBarButton1 As System.Windows.Forms.ToolBarButton
+        ' "Zoom Mode" toolbar button - enables rubber-band zoom interaction
         Private btnZoom As System.Windows.Forms.ToolBarButton
+        ' "Drag Mode" toolbar button - enables pan/drag interaction
         Private btnDrag As System.Windows.Forms.ToolBarButton
         Private statusBar1 As System.Windows.Forms.StatusBar
         Private statusBarPanel1 As System.Windows.Forms.StatusBarPanel
+        ' The central GIS map viewer control (ActiveX host wrapper)
         Private WithEvents GIS As AxTatukGIS_XDK11.AxTGIS_ViewerWnd
 
         Public Sub New()
-            '
-            ' Required for Windows Form Designer support
-            '
             InitializeComponent()
 
-            '
-            ' TODO: Add any constructor code after InitializeComponent call
-            '
+            ' Set the GIS control as the active control so it receives
+            ' keyboard focus and mouse wheel events without an extra click
             Me.ActiveControl = GIS
-
         End Sub
 
-        ''' <summary>
-        ''' Clean up any resources being used.
-        ''' </summary>
+        ''' <summary>Clean up any resources being used.</summary>
         Protected Overloads Overrides Sub Dispose(ByVal disposing As Boolean)
             If disposing Then
                 If Not components Is Nothing Then
@@ -129,7 +145,7 @@ Namespace Zooming
             Me.statusBar1.Size = New System.Drawing.Size(598, 19)
             Me.statusBar1.TabIndex = 1
             '
-            'statusBarPanel1
+            'statusBarPanel1 - hints the user about the mouse wheel feature
             '
             Me.statusBarPanel1.AutoSize = System.Windows.Forms.StatusBarPanelAutoSize.Spring
             Me.statusBarPanel1.Name = "statusBarPanel1"
@@ -167,11 +183,10 @@ Namespace Zooming
         End Sub
 #End Region
 
+        ' Helper instance for TGIS_Utils (ActiveX wrapper requires instance calls)
         Dim GisUtils As New TGIS_Utils()
 
-        ''' <summary>
-        ''' The main entry point for the application.
-        ''' </summary>
+        ''' <summary>Application entry point.</summary>
         <STAThread>
         Shared Sub Main()
             Application.EnableVisualStyles()
@@ -179,28 +194,62 @@ Namespace Zooming
             Application.Run(New WinForm())
         End Sub
 
+        ''' <summary>
+        ''' Form load event handler.
+        ''' Opens the sample Poland project file. A .ttkproject file is a TatukGIS
+        ''' project format that bundles multiple layer definitions, their rendering
+        ''' styles, and coordinate system settings into a single file.
+        ''' </summary>
         Private Sub WinForm_Load(ByVal sender As Object, ByVal e As System.EventArgs) Handles MyBase.Load
             GIS.Open(GisUtils.GisSamplesDataDirDownload() & "\World\Countries\Poland\DCW\poland.ttkproject")
         End Sub
 
+        ''' <summary>
+        ''' Mouse wheel event handler - zooms in or out centered on the cursor position.
+        '''
+        ''' ActiveX note: this event is named MouseWheelEvent and uses a different
+        ''' argument type. The wheel delta is read from e.WheelDelta (not e.Delta).
+        ''' The mouse position is in screen coordinates, so PointToClient converts
+        ''' it to the GIS control's client coordinate space before passing to ZoomBy.
+        '''
+        ''' GIS.ZoomBy(factor, x, y) scales the viewport by 'factor' around the
+        ''' screen point (x, y) so the map location under the cursor stays fixed:
+        '''   e.WheelDelta &lt; 0: zoom in  -> factor 5/4 = 1.25x wider view
+        '''   e.WheelDelta &gt; 0: zoom out -> factor 4/5 = 0.80x narrower view
+        ''' </summary>
         Private Sub GIS_MouseWheel(sender As Object, e As AxTatukGIS_XDK11.ITGIS_ViewerWndEvents_MouseWheelEvent) Handles GIS.MouseWheelEvent
+            ' Do nothing if no layers are loaded
             If GIS.IsEmpty Then
                 Return
             End If
 
+            ' Convert screen coordinates to GIS control client coordinates
             Dim pt As Point = GIS.PointToClient(New Point(e.MousePos.X, e.MousePos.Y))
 
             If e.WheelDelta < 0 Then
+                ' Wheel scrolled down: zoom in (magnify, 25% wider viewport)
                 GIS.ZoomBy(5.0 / 4.0, pt.X, pt.Y)
             Else
+                ' Wheel scrolled up: zoom out (shrink, 20% narrower viewport)
                 GIS.ZoomBy(4.0 / 5.0, pt.X, pt.Y)
             End If
         End Sub
 
-
+        ''' <summary>
+        ''' Toolbar button-click event handler - dispatches to the correct action
+        ''' based on which button was clicked (by index in the Buttons collection).
+        '''
+        ''' Index 0: Full Extent - resets viewport to show all loaded layers.
+        ''' Index 2: Zoom Mode   - enables rubber-band rectangle zoom.
+        ''' Index 3: Drag Mode   - enables pan/drag.
+        '''
+        ''' The Pushed state of toggle buttons is managed manually to give visual
+        ''' feedback about which mode is currently active (ActiveX ToolBar control).
+        ''' </summary>
         Private Sub toolBar1_ButtonClick(ByVal sender As Object, ByVal e As System.Windows.Forms.ToolBarButtonClickEventArgs) Handles toolBar1.ButtonClick
             Select Case toolBar1.Buttons.IndexOf(e.Button)
                 Case 0
+                    ' Zoom to the full extent of all loaded layers
                     GIS.FullExtent()
                 Case 2
                     GIS.Mode = TGIS_ViewerMode.Zoom
@@ -211,6 +260,10 @@ Namespace Zooming
             End Select
         End Sub
 
+        ''' <summary>
+        ''' Toolbar mouse-move handler - changes the cursor to a hand pointer
+        ''' when hovering over an active button to hint that it is clickable.
+        ''' </summary>
         Private Sub toolBar1_MouseMove(ByVal sender As Object, ByVal e As System.Windows.Forms.MouseEventArgs) Handles toolBar1.MouseMove
             Dim p As Point = New Point(e.X, e.Y)
 

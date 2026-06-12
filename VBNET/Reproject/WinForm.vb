@@ -7,10 +7,38 @@ Imports System.Windows.Forms
 Imports System.Data
 Imports TatukGIS_XDK11
 
+' Reproject sample — demonstrates coordinate system transformation and reprojection of geospatial data (ActiveX/COM).
+'
+' What the sample shows:
+'   - Loading a shapefile into the GIS viewer
+'   - Accessing the projection catalogue via projection registry
+'   - Creating/building custom coordinate systems from projection methods
+'   - Selecting a target map projection (UTM, Mercator, Geographic, etc.)
+'   - Reprojecting layer geometry to target coordinate system
+'   - Exporting reprojected data to a new file (SaveAs)
+'   - Displaying reprojected layer in the viewer
+'   - Real-time preview of reprojected data
+'   - Spatial reference assignment and transformation
+'   - Coordinate system metadata display
+'
+' ActiveX/COM-specific details:
+'   - GIS is AxTGIS_ViewerWnd (ActiveX wrapper, not managed control)
+'   - Projection registry accessed through COM-compatible API
+'   - Same functional approach as NDK .NET but with ActiveX interop layer
+'   - SaveFileDialog for file output in COM context
+'
+' Key TatukGIS API concepts shown here:
+'   TGIS_ViewerWnd (via AxTGIS_ViewerWnd) - main visual map control
+'   TGIS_LayerVector            - vector layer for spatial data
+'   TGIS_CSCoordinateSystem      - coordinate system definition
+'   Projection catalogue         - registry of map projections
+'   TGIS_Projection              - projection method instantiation
+'   TGIS_Layer.SaveAs()          - export reprojected data to new file
+'   EPSG codes                   - international coordinate system identifiers
+'   GIS.CS property              - assign coordinate system to viewer
+'   On-the-fly transformation    - automatic reprojection during rendering
+
 Namespace Reproject
-    ''' <summary>
-    ''' Summary description for WinForm.
-    ''' </summary>
     Public Class WinForm
         Inherits System.Windows.Forms.Form
         ''' <summary>

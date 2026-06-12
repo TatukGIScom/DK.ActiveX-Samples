@@ -9,8 +9,37 @@ Imports System.IO
 Imports TatukGIS_XDK11
 
 Namespace CGMViewer
-    ''' <summary>
-    ''' Summary description for WinForm.
+    ' CGMViewer sample — demonstrates rendering CGM (Computer Graphics Metafile) symbols (VB.NET ActiveX/COM).
+    '
+    ' What the sample shows:
+    '   - Loading CGM (Computer Graphics Metafile) symbol files (COM wrapper)
+    '   - Displaying available symbols from TatukGIS symbol library (COM)
+    '   - Rendering CGM symbols as point markers on the map
+    '   - Using GisUtils.SymbolList to enumerate symbol resources (COM method)
+    '   - Creating point shapes with symbol markers (COM objects)
+    '   - Rotating symbols programmatically (90° increments)
+    '   - Scaling symbols to fit viewer extents
+    '   - Interactive symbol selection via listbox
+    '   - Displaying symbols centered on crosshair layer
+    '   - Symbol preview and visualization
+    '   - Supporting multiple symbol size and rotation parameters
+    '   - ActiveX control integration (AxTGIS_ViewerWnd)
+    '
+    ' Key TatukGIS API concepts shown here:
+    '   TGIS_ViewerWnd              - main visual map control (COM wrapper)
+    '   GisUtils.SymbolList         - enumerate CGM symbol resources (COM)
+    '   TGIS_LayerVector            - vector layer for symbol markers (COM)
+    '   TGIS_Shape (point)          - point geometry for symbol placement (COM)
+    '   TGIS_Params.Marker          - point symbol rendering parameters (COM)
+    '   CGM symbols                 - Computer Graphics Metafile vector symbols
+    '   Symbol rotation             - angle-based marker orientation
+    '   Symbol scaling              - size adjustment for display
+    '   Symbol library              - TatukGIS built-in symbol collection
+    '   Interactive selection       - listbox-based symbol picking
+    '
+    ''' ActiveX-specific differences: GIS.GetOcx() is passed to Symbol.Prepare instead of the
+    ''' viewer directly; GisUtils is used as an instance for utility calls; TGIS_Color is
+    ''' instantiated as (New TGIS_Color).Black / .RenderColor.
     ''' </summary>
     Public Class WinForm
         Inherits System.Windows.Forms.Form
@@ -158,6 +187,10 @@ Namespace CGMViewer
             Application.Run(New WinForm())
         End Sub
 
+        ''' <summary>
+        ''' Populates the list box with *.cgm filenames and creates the crosshair vector layer
+        ''' (horizontal line, vertical line, and centre point shape) that displays the selected symbol.
+        ''' </summary>
         Private Sub WinForm_Load(ByVal sender As Object, ByVal e As System.EventArgs) Handles MyBase.Load
             Dim dir As DirectoryInfo
             Dim ll As TGIS_LayerVector
@@ -192,10 +225,16 @@ Namespace CGMViewer
             shp.AddPoint(GisUtils.GisPoint(0, 0))
         End Sub
 
+        ''' <summary>Redraws the symbol at the new size whenever the form is resized.</summary>
         Private Sub WinForm_Resize(ByVal sender As Object, ByVal e As System.EventArgs) Handles MyBase.Resize
             drawSymbol()
         End Sub
 
+        ''' <summary>
+        ''' Loads the selected CGM file via GisUtils.SymbolList, sizes it to fit two-thirds of the
+        ''' smaller viewer dimension (aspect-ratio preserved), and invalidates the map.
+        ''' Passes GIS.GetOcx() to Symbol.Prepare as required by the ActiveX host.
+        ''' </summary>
         Private Sub drawSymbol()
             Dim w, h As Integer
 
@@ -229,12 +268,14 @@ Namespace CGMViewer
             End If
         End Sub
 
+        ''' <summary>Rotates the displayed symbol by 90° (π/2 radians) each click.</summary>
         Private Sub button1_Click(ByVal sender As Object, ByVal e As System.EventArgs) Handles button1.Click
             ' rotate symbol
             shp.Params.Marker.SymbolRotate = shp.Params.Marker.SymbolRotate + Math.PI / 2
             shp.Invalidate()
         End Sub
 
+        ''' <summary>Redraws the symbol when a different CGM file is selected in the list box.</summary>
         Private Sub listBox1_SelectedIndexChanged(ByVal sender As Object, ByVal e As System.EventArgs) Handles listBox1.SelectedIndexChanged
             statusBar1.Panels(0).Text = GisUtils.GisSamplesDataDirDownload() + listBox1.Items(listBox1.SelectedIndex)
             drawSymbol()

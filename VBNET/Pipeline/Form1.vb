@@ -12,6 +12,21 @@ Imports System.Data
 Imports AxTatukGIS_XDK11
 Imports System.Collections.Generic
 
+''' <summary>
+''' Pipeline sample — demonstrates scripted GIS operations using TGIS_Pipeline.
+''' A .ttkpipeline file is loaded and parsed; the user can edit and execute pipeline
+''' commands (ETL operations like opening layers, filtering, contouring, rasterizing) via the
+''' code editor or by double-clicking commands in the list to open parameter dialogs.
+''' Progress bars show operation execution status in real-time.
+'''
+''' The pipeline engine provides a scripting interface for automation of complex GIS workflows:
+''' - Script-based layer operations (Open, Save, Export, Filter)
+''' - Spatial analysis and processing (Buffer, Intersect, Union, Contouring)
+''' - Raster operations (Resample, Classify, Rasterize)
+''' - Batch processing of map layers
+'''
+''' ActiveX note: GisUtils is an instance object; COM overload helpers are used.
+''' </summary>
 Friend Class Form1
     Inherits System.Windows.Forms.Form
 #Region "Windows Form Designer generated code "
@@ -264,6 +279,8 @@ Friend Class Form1
 
     Dim GisUtils As New TGIS_Utils()
 
+    ''' <summary>Loads a .ttkpipeline file, creates the TGIS_Pipeline object, and populates the
+    ''' command list with available pipeline operations.</summary>
     Private Sub Form1_Load(ByVal eventSender As System.Object, ByVal eventArgs As System.EventArgs) Handles MyBase.Load
         Dim i As Integer
 
@@ -355,6 +372,8 @@ Friend Class Form1
         MessageBox.Show(_message)
     End Sub
 
+    ''' <summary>Opens the TGIS_PipelineParamsEditor dialog for the selected operation and
+    ''' updates the operation code if OK is clicked.</summary>
     Private Sub doPipelineForm(ByVal _operation As TGIS_PipelineOperationAbstract)
         Dim frm As TGIS_PipelineParamsEditor
 
@@ -383,58 +402,79 @@ Friend Class Form1
         oPipeline.ShowForm_2(lstCommands.SelectedItem.ToString(), rtbCode.GetLineFromCharIndex(rtbCode.SelectionStart))
     End Sub
 
+    ''' <summary>Opens help documentation.</summary>
     Private Sub btnHelp_Click(sender As Object, e As EventArgs) Handles btnHelp.Click
         Dim url As String
         url = "https://docs.tatukgis.com/DK11/doc:pipeline"
         System.Diagnostics.Process.Start(url)
     End Sub
 
+    ''' <summary>Exits the application.</summary>
     Private Sub btnExit_Click(sender As Object, e As EventArgs) Handles btnExit.Click
         Application.Exit()
     End Sub
 
+    ''' <summary>Executes the pipeline script from the code editor.</summary>
     Private Sub btnExecute_Click(sender As Object, e As EventArgs) Handles btnExecute.Click
+        '' assign the pipeline source code from the text editor
+        '' the pipeline engine parses and validates the commands
         oPipeline.SourceCode = rtbCode.Text
+        '' execute the pipeline script sequentially
+        '' each command is executed in order; progress updates are fired for monitoring
         oPipeline.Execute()
     End Sub
 
+    ''' <summary>Reads a .ttkpipeline file and populates the code editor with its contents.</summary>
     Private Sub readFromFile(ByVal _str As String)
         Dim reader As StreamReader
         Dim line As String
 
         reader = New StreamReader(_str)
         Try
+            '' clear any existing content from the code editor
             rtbCode.Clear()
+            '' read the file line by line and append to the editor
             Do
                 line = reader.ReadLine
+                '' preserve line endings for proper script parsing
                 rtbCode.AppendText(line + Global.Microsoft.VisualBasic.ChrW(13) + Global.Microsoft.VisualBasic.ChrW(10))
             Loop Until line Is Nothing
         Finally
+            '' ensure the file handle is closed even if an exception occurs
             reader.Close()
         End Try
     End Sub
 
+    ''' <summary>Opens a .ttkpipeline file and loads its contents into the code editor.</summary>
     Private Sub btnOpen_Click(sender As Object, e As EventArgs) Handles btnOpen.Click
+        '' show the open file dialog filtered to .ttkpipeline files
         If dlgOpen.ShowDialog() = DialogResult.OK Then
+            '' load the selected file into the code editor
             readFromFile(dlgOpen.FileName)
         End If
     End Sub
 
+    ''' <summary>Saves the current pipeline code to a .ttkpipeline file.</summary>
     Private Sub btnSave_Click(sender As Object, e As EventArgs) Handles btnSave.Click
         Dim lines As String()
         Dim file As String
         Dim line As String
         Dim writer As StreamWriter
 
+        '' show the save file dialog filtered to .ttkpipeline files
         If dlgSave.ShowDialog() = DialogResult.OK Then
             file = dlgSave.FileName
+            '' get all lines from the code editor
             lines = rtbCode.Lines
+            '' create a new file writer for the output file
             writer = New StreamWriter(file)
             Try
+                '' write each line from the editor to the file
                 For Each line In lines
                     writer.WriteLine(line)
                 Next
             Finally
+                '' ensure the file handle is closed
                 writer.Close()
             End Try
         End If

@@ -8,10 +8,40 @@ Imports System.Data
 Imports System.Data.OleDb
 Imports TatukGIS_XDK11
 
+' JoinAndChart sample — demonstrates attribute joining and proportional symbol charting (ActiveX/COM).
+'
+' What the sample shows:
+'   - Joining vector layer attributes with external OleDb database table
+'   - Loading data from external SQL database into memory
+'   - Matching features with database records via common attribute key
+'   - Rendering pie charts at feature locations with proportional sizing
+'   - Rendering bar charts at feature locations with proportional sizing
+'   - Rendering column charts at feature locations with proportional sizing
+'   - Controlling chart size based on selected attribute field value
+'   - Displaying chart data based on selected value field
+'   - Switching between different chart types via combo box selector
+'   - Switching between different value fields for chart data
+'   - Interactive database joins for real-time visualization updates
+'   - Multi-field data representation at geographic locations
+'
+' ActiveX/COM-specific details:
+'   - GIS is AxTGIS_ViewerWnd (ActiveX wrapper, not managed control)
+'   - OleDbConnection and OleDbDataAdapter for COM-compatible database access
+'   - Toolbar buttons and combo boxes for interactive controls
+'   - Same functional approach as NDK .NET but with ActiveX interop layer
+'
+' Key TatukGIS API concepts shown here:
+'   TGIS_ViewerWnd (via AxTGIS_ViewerWnd) - main visual map control
+'   TGIS_LayerVector            - vector layer with attributes
+'   TGIS_Params                 - feature styling and rendering
+'   TGIS_Chart                  - proportional symbol chart rendering
+'   OleDbConnection             - external database connection
+'   OleDbDataAdapter            - database query and data loading
+'   Attribute join              - match records by common key
+'   Chart types                 - pie, bar, column chart styles
+'   Feature location rendering  - place charts at shape geometry
+
 Namespace JoinAndChart
-    ''' <summary>
-    ''' Summary description for WinForm.
-    ''' </summary>
     Public Class WinForm
         Inherits System.Windows.Forms.Form
         ''' <summary>

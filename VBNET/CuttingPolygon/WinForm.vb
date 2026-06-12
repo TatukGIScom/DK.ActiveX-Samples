@@ -8,9 +8,32 @@ Imports System.Data
 Imports TatukGIS_XDK11
 
 Namespace CuttingPolygon
-    ''' <summary>
-    ''' Summary description for WinForm.
-    ''' </summary>
+    ' CuttingPolygon sample — demonstrates how to clip a raster (pixel) layer's rendering to
+    ' within an arbitrary polygon boundary using TGIS_LayerPixel.CuttingPolygon.
+    '
+    ' What the sample shows:
+    '   - Loading a raster image (world map) into the GIS viewer
+    '   - Creating an in-memory vector layer with a custom polygon
+    '   - Implementing raster clipping/masking via CuttingPolygon property
+    '   - Assigning a triangular polygon as the cutting mask
+    '   - Toggling clipping on/off via button click (Do Cutting)
+    '   - Raster rendering constrained to polygon boundary
+    '   - Remaining regions outside polygon are not rendered
+    '   - Interactive zoom and pan with clipped raster display
+    '
+    ' ActiveX-specific implementation details:
+    '   - GIS.Items.Item(i) is used instead of the standard indexer
+    '   - GIS.GetOcx() links the ActiveX control to the legend
+    '   - COM interop handling for layer access and properties
+    '
+    ' Key TatukGIS API concepts shown here:
+    '   TGIS_ViewerWnd              - main visual map control (ActiveX COM version)
+    '   TGIS_LayerPixel             - raster/image layer
+    '   TGIS_LayerVector            - in-memory vector layer
+    '   TGIS_LayerPixel.CuttingPolygon - masking/clipping property
+    '   TGIS_Shape                  - polygon geometry for clipping
+    '   TGIS_ControlLegend          - layer list/legend panel (ActiveX)
+    '   OnLoad event                - initialization workflow
     Public Class WinForm
         Inherits System.Windows.Forms.Form
         ''' <summary>
@@ -136,31 +159,50 @@ Namespace CuttingPolygon
             Application.Run(New WinForm())
         End Sub
 
+        ''' <summary>Opens the world raster image, creates an in-memory vector layer named "shape",
+        ''' and adds a triangular polygon shape to it.</summary>
         Private Sub WinForm_Load(ByVal sender As Object, ByVal e As System.EventArgs) Handles MyBase.Load
             Dim shp As TGIS_Shape
+            '' link the legend panel to the map viewer control via its COM interface
             tgiS_ControlLegend1.GIS_Viewer = GIS.GetOcx()
 
+            '' load the base world raster image (satellite imagery)
             GIS.Open(GisUtils.GisSamplesDataDirDownload() + "\World\VisibleEarth\world_8km.jpg")
+            '' create an in-memory vector layer to hold the clipping polygon
             ll = New TGIS_LayerVector()
             ll.Name = "shape"
             GIS.Add(ll)
 
+            '' create a new polygon shape in the vector layer
             shp = ll.CreateShape(TGIS_ShapeType.Polygon)
+            '' lock the shape so the spatial extent updates as we add points
             shp.Lock(TGIS_Lock.Extent)
+            '' start a new polygon part (polygon can have multiple parts for complex shapes)
             shp.AddPart()
+            '' add three vertices to form a triangle (in geographic coordinates)
             shp.AddPoint(GisUtils.GisPoint(-5, 8))
             shp.AddPoint(GisUtils.GisPoint(40, 2))
             shp.AddPoint(GisUtils.GisPoint(20, -20))
+            '' unlock the shape to finalize it
             shp.Unlock()
         End Sub
 
+        ''' <summary>Assigns the "shape" layer's first polygon as the raster layer's CuttingPolygon
+        ''' (converting to the raster's coordinate system), then hides the vector layer.</summary>
         Private Sub btnCutting_Click(sender As Object, e As EventArgs) Handles btnCutting.Click
+            '' get the raster layer (the first/only pixel layer in the map)
             lp = CType((GIS.Items.Item(0)), TGIS_LayerPixel)
+            '' fetch the polygon from the vector layer and convert it to the raster's coordinate system
+            '' CreateCopyCS creates a copy of the shape geometry transformed to the target CS
+            '' (CuttingPolygon must be in the same coordinate system as the raster layer)
             lp.CuttingPolygon = CType((ll.GetShape(1).CreateCopyCS(lp.CS)), TGIS_ShapePolygon)
+            '' hide the clipping polygon layer so only the raster with the clipping effect is visible
             ll.Active = False
+            '' repaint the map to apply the clipping effect
             GIS.InvalidateWholeMap()
         End Sub
 
+        ''' <summary>Switches the viewer to Zoom mode.</summary>
         Private Sub btnZoom_Click(sender As Object, e As EventArgs) Handles btnZoom.Click
             GIS.Mode = TGIS_ViewerMode.Zoom
         End Sub

@@ -9,8 +9,39 @@ Imports TatukGIS_XDK11
 Imports AxTatukGIS_XDK11
 
 Namespace DemOperations
-    ''' <summary>
-    ''' Summary description for WinForm.
+    ' DemOperations sample — demonstrates terrain analysis derived from DEM raster (VB.NET ActiveX/COM).
+    '
+    ' What the sample shows:
+    '   - Loading DEM (Digital Elevation Model) raster layers (ADF format, COM wrapper)
+    '   - Performing terrain analysis operations on elevation grids (COM methods)
+    '   - Hillshade: shaded relief visualization
+    '   - Slope: steepness analysis
+    '   - Slope Hydro: hydrologically correct slope calculation
+    '   - Aspect: flow direction (N, NE, E, etc.)
+    '   - TRI: Terrain Ruggedness Index
+    '   - TPI: Topographic Position Index
+    '   - Roughness: local terrain roughness metric
+    '   - Total Curvature: curvature analysis
+    '   - Matrix Gain: gradient gain analysis
+    '   - Flow Direction: water flow direction
+    '   - Custom grid operations via GridOperationEvent callback (COM)
+    '   - Adjustable hillshade parameters (shadow, altitude)
+    '   - 3D visualization of results
+    '   - Legend display with colour ramps
+    '
+    ' Key TatukGIS API concepts shown here:
+    '   TGIS_ViewerWnd              - main visual map control (COM wrapper)
+    '   TGIS_LayerPixel             - raster/DEM layer (COM)
+    '   TGIS_DemGenerator           - terrain analysis engine (COM)
+    '   TGIS_LayerPixel.GridOperationEvent - custom grid processing callback
+    '   Terrain analysis operations - Hillshade, Slope, Aspect, TRI, TPI, etc.
+    '   Colour ramps                - visualization of terrain data
+    '   3D visualization            - elevation display
+    '   DEM processing              - grid-based raster operations
+    '   Spatial analysis            - terrain-derived metrics
+    ''' In the ActiveX host the grid array is accessed via TGIS_GridArray.Value() rather
+    ''' than a jagged Single()() array, and the BusyEvent delivers raw positional integers
+    ''' (e.Pos / e.End) instead of a TGIS_BusyEventArgs object.
     ''' </summary>
     Public Class WinForm
         Inherits System.Windows.Forms.Form
@@ -552,6 +583,10 @@ Namespace DemOperations
 
         Private WithEvents EventLayer As TGIS_LayerPixel
 
+        ''' <summary>
+        ''' Initialises the open-file filter, links the legend control to the GIS viewer
+        ''' (GIS.GetOcx() is required in the ActiveX host), and loads the default sample DEM.
+        ''' </summary>
         Private Sub WinForm_Load(ByVal sender As Object, ByVal e As System.EventArgs) Handles MyBase.Load
             dlgOpen.Filter = GisUtils.GisSupportedFiles(TGIS_FileType.All, False)
             ControlLegend.GIS_Viewer = GIS.GetOcx()
@@ -559,6 +594,14 @@ Namespace DemOperations
             GIS.FullExtent()
         End Sub
 
+        ''' <summary>
+        ''' Custom GridOperationEvent callback that computes a hillshade value for every cell
+        ''' using Horn's 3x3 neighbourhood algorithm.
+        ''' NoData cells (and any cell whose neighbourhood contains NoData) are passed through unchanged.
+        ''' The sun azimuth is read live from trbShadow.Value so the result updates interactively.
+        ''' In the ActiveX host the grid data is accessed through TGIS_GridArray.Value() and the
+        ''' result is returned via the ByRef _result parameter rather than as a function return value.
+        ''' </summary>
         Private Sub ChangeDem(_layer As TBaseObject, _extent As TGIS_Extent, _source As TGIS_GridArray, ByRef _output As TGIS_GridArray, _width As Integer, _height As Integer, ByRef _minz As Single, ByRef _maxz As Single, ByRef _result As Boolean)
             Const DEG_TO_RAD As Double = Math.PI / 180.0
 
@@ -680,35 +723,44 @@ Namespace DemOperations
 
         End Sub
 
+        ''' <summary>Opens a file dialog and loads the chosen raster file into the viewer.</summary>
         Private Sub btnOpen_Click(sender As Object, e As EventArgs) Handles btnOpen.Click
             dlgOpen.ShowDialog()
             GIS.Open(dlgOpen.FileName)
         End Sub
 
+        ''' <summary>Resets the viewer to show the full spatial extent of all loaded layers.</summary>
         Private Sub btnFullExtent_Click(sender As Object, e As EventArgs) Handles btnFullExtent.Click
             If (GIS.IsEmpty) Then Return
 
             GIS.FullExtent()
         End Sub
 
+        ''' <summary>Switches the viewer interaction mode to zoom.</summary>
         Private Sub btnZoom_Click(sender As Object, e As EventArgs) Handles btnZoom.Click
             If (GIS.IsEmpty) Then Return
 
             GIS.Mode = TGIS_ViewerMode.Zoom
         End Sub
 
+        ''' <summary>Switches the viewer interaction mode to pan/drag.</summary>
         Private Sub btnDrag_Click(sender As Object, e As EventArgs) Handles btnDrag.Click
             If (GIS.IsEmpty) Then Return
 
             GIS.Mode = TGIS_ViewerMode.Drag
         End Sub
 
+        ''' <summary>Toggles the viewer between 2D map view and 3D perspective view.</summary>
         Private Sub btn3D_Click(sender As Object, e As EventArgs) Handles btn3D.Click
             If (GIS.IsEmpty) Then Return
 
             GIS.View3D = Not GIS.View3D
         End Sub
 
+        ''' <summary>
+        ''' Updates the grid shadow angle on the source layer as the track bar position changes,
+        ''' giving an interactive sun-position preview.
+        ''' </summary>
         Private Sub trbShadow_Scroll(sender As Object, e As EventArgs) Handles trbShadow.Scroll
             Dim lp As TGIS_LayerPixel
 
@@ -722,6 +774,13 @@ Namespace DemOperations
             End If
         End Sub
 
+        ''' <summary>
+        ''' Attaches or detaches the custom ChangeDem hillshade callback on the source layer when
+        ''' the checkbox state changes.  Checking enables the custom callback and disables the built-in
+        ''' grid shadow; unchecking restores the built-in shadow.
+        ''' The ActiveX host uses explicit AddHandler/RemoveHandler on the EventLayer field because
+        ''' the COM control does not support the VB.NET WithEvents/Handles pattern for layer events.
+        ''' </summary>
         Private Sub cbxCustomGrid_CheckedChanged(sender As Object, e As EventArgs) Handles cbxCustomGrid.CheckedChanged
             If Not (EventLayer Is Nothing) Then
                 RemoveHandler EventLayer.GridOperationEvent, AddressOf ChangeDem
@@ -742,6 +801,11 @@ Namespace DemOperations
             GIS.InvalidateWholeMap()
         End Sub
 
+        ''' <summary>
+        ''' Shows or hides the parameter sub-panels that are relevant to the currently selected
+        ''' DEM operation (Hillshade params, Slope/SlopeHydro params, Aspect angle checkbox,
+        ''' or Total Curvature mode).
+        ''' </summary>
         Private Sub cbOperations_SelectedIndexChanged(sender As Object, e As EventArgs) Handles cbOperations.SelectedIndexChanged
             gbHillShadeParams.Visible = False
             gbCurvature.Visible = False
@@ -757,6 +821,12 @@ Namespace DemOperations
             End Select
         End Sub
 
+        ''' <summary>
+        ''' Creates an output grid layer matching the source DEM, instantiates the TGIS_DemOperation
+        ''' subclass selected in cbOperations (using the ActiveX Create_() initialiser pattern),
+        ''' runs TGIS_DemGenerator.Process, and adds the result layer to the viewer.
+        ''' Any previous result layer with the same name is removed before the new one is added.
+        ''' </summary>
         Private Sub btnRun_Click(sender As Object, e As EventArgs) Handles btnRun.Click
             Dim lp As TGIS_LayerPixel
             Dim ld As TGIS_LayerPixel
@@ -838,6 +908,12 @@ Namespace DemOperations
             GIS.InvalidateWholeMap()
         End Sub
 
+        ''' <summary>
+        ''' Reports DEM processing progress on the progress bar.
+        ''' Shows and updates the bar while e.End &gt; 0, and hides it when the operation completes.
+        ''' The ActiveX BusyEvent delivers raw positional integers (e.Pos / e.End) rather than
+        ''' a TGIS_BusyEventArgs object.
+        ''' </summary>
         Private Sub GIS_BusyEvent(sender As Object, e As ITGIS_ViewerWndEvents_BusyEventEvent) Handles GIS.BusyEvent
             If e.End <= 0 Then
                 pbProgress.Visible = False

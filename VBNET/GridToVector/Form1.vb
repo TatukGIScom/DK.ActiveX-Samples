@@ -8,6 +8,15 @@ Imports TatukGIS_XDK11
 Imports AxTatukGIS_XDK11
 
 Namespace GridToVector
+    ''' <summary>
+    ''' GridToVector sample (ActiveX host) — demonstrates raster-to-vector conversion
+    ''' using TGIS_GridToPolygon and TGIS_GridToPoint.
+    '''
+    ''' Two source datasets are available:
+    ''' a Land Cover TIFF (Corine CLC2018, Luxembourg) and a DEM grid.
+    ''' In the ActiveX host, GenerateRamp_2 is used (disambiguated overload) and
+    ''' BusyEvent delivers raw positional integers instead of EventArgs.
+    ''' </summary>
     Public Class WinForm
         Inherits System.Windows.Forms.Form
 
@@ -284,17 +293,23 @@ Namespace GridToVector
             Application.Run(New WinForm())
         End Sub
 
+        ''' <summary>Loads the Land Cover dataset by default and sets the viewer to select mode on startup.</summary>
         Private Sub WinForm_Load(ByVal sender As Object, ByVal e As System.EventArgs) Handles MyBase.Load
             btnLoadLand.PerformClick()
             GIS.Mode = TGIS_ViewerMode.[Select]
         End Sub
 
+        ''' <summary>Loads the Corine Land Cover 2018 TIFF for Luxembourg and sets default tolerance/spacing values.</summary>
         Private Sub btnLoadLand_Click(ByVal sender As Object, ByVal e As EventArgs) Handles btnLoadLand.Click
             GIS.Open(GisUtils.GisSamplesDataDirDownload() & "World\Countries\Luxembourg\CLC2018_CLC2018_V2018_20_Luxembourg.tif")
             tbTolerance.Text = "1"
             tbPointSpacing.Text = "1000"
         End Sub
 
+        ''' <summary>
+        ''' Loads an elevation grid, applies a blue-lime-red HSL colour ramp (via GenerateRamp_2,
+        ''' the ActiveX-disambiguated overload), and sets default tolerance/spacing values.
+        ''' </summary>
         Private Sub btnLoadDEM_Click(ByVal sender As Object, ByVal e As EventArgs) Handles btnLoadDEM.Click
             Dim lp As TGIS_LayerPixel
             GIS.Open(GisUtils.GisSamplesDataDirDownload() & "Samples\3D\elevation.grd")
@@ -305,6 +320,10 @@ Namespace GridToVector
             tbPointSpacing.Text = "200"
         End Sub
 
+        ''' <summary>
+        ''' Reports rasterisation progress on the progress bar.
+        ''' The ActiveX BusyEvent delivers raw positional integers (Pos/End) instead of EventArgs.
+        ''' </summary>
         Private Sub doBusyEvent(Pos As Integer, [End] As Integer, ByRef Abort As Boolean)
             Select Case Pos
                 Case 0
@@ -318,6 +337,10 @@ Namespace GridToVector
             End Select
         End Sub
 
+        ''' <summary>
+        ''' Locates the shape under the mouse cursor, selects it, and shows its attributes.
+        ''' Uses the ActiveX MouseDownEvent (e.x/e.y) rather than the standard MouseEventArgs.
+        ''' </summary>
         Private Sub GIS_MouseDownEvent(sender As Object, e As AxTatukGIS_XDK11.ITGIS_ViewerWndEvents_MouseDownEvent) Handles GIS.MouseDownEvent
             Dim shp As TGIS_Shape
 
@@ -336,6 +359,10 @@ Namespace GridToVector
             GIS_Attr.ShowShape(shp)
         End Sub
 
+        ''' <summary>
+        ''' Zooms in or out centred on the cursor position in response to ActiveX MouseWheelEvent.
+        ''' Converts the screen position via PointToClient before passing it to ZoomBy.
+        ''' </summary>
         Private Sub GIS_MouseWheel(sender As Object, e As AxTatukGIS_XDK11.ITGIS_ViewerWndEvents_MouseWheelEvent) Handles GIS.MouseWheelEvent
             If GIS.IsEmpty Then Return
 
@@ -348,6 +375,11 @@ Namespace GridToVector
             End If
         End Sub
 
+        ''' <summary>
+        ''' Converts the source raster to a polygon vector layer using TGIS_GridToPolygon
+        ''' with the tolerance and split-shapes settings.  Any existing result layer is removed first.
+        ''' The output is added with 50% transparency and a black outline.
+        ''' </summary>
         Private Sub btnGridToPolygon_Click(ByVal sender As Object, ByVal e As EventArgs) Handles btnGridToPolygon.Click
             Dim lp As TGIS_LayerPixel
             Dim lv As TGIS_LayerVector
@@ -375,6 +407,11 @@ Namespace GridToVector
             GIS.InvalidateWholeMap()
         End Sub
 
+        ''' <summary>
+        ''' Converts the source raster to a point vector layer using TGIS_GridToPoint
+        ''' with the tolerance, point-spacing, and ignore-NoData settings.
+        ''' Points are styled as small black circles with 75% transparency.
+        ''' </summary>
         Private Sub btnGridToPoint_Click(ByVal sender As Object, ByVal e As EventArgs) Handles btnGridToPoint.Click
             Dim lp As TGIS_LayerPixel = TryCast(GIS.Items.Item(0), TGIS_LayerPixel)
             If GIS.[Get](LV_NAME) IsNot Nothing Then GIS.Delete(LV_NAME)

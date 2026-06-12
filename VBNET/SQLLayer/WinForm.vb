@@ -1,3 +1,32 @@
+'=============================================================================
+' This source code is a part of TatukGIS Developer Kernel.
+'=============================================================================
+'
+' SQLLayer Sample - VB.NET / ActiveX (TatukGIS XDK11)
+' ====================================================
+' Demonstrates how to open and display an SQL layer using the TatukGIS
+' ActiveX (XDK11) COM wrapper.
+'
+' An SQL layer (*.ttkls file) is a virtual layer definition that describes how
+' to retrieve spatial data from a relational database (e.g. PostgreSQL/PostGIS,
+' SQL Server, SQLite, Oracle Spatial) using a SQL query.  The .ttkls file
+' contains the connection string, the SQL statement, and field mappings; it
+' can be opened just like any other layer format supported by the DK.
+'
+' This variant uses the ActiveX/COM interop binding (AxTatukGIS_XDK11) instead
+' of the managed NDK assembly; the API surface is equivalent but method calls
+' go through the COM dispatch layer.
+'
+' Key concepts shown:
+'   - Opening a .ttkls project with AxTGIS_ViewerWnd.Open (via COM)
+'   - Fitting the view to the full data extent with FullExtent
+'   - Switching the viewer between Zoom and Drag interaction modes
+'
+' To adapt this sample to your own database:
+'   Edit gistest.ttkls to supply your connection string and SQL query.
+'   The file can also be opened in the TatukGIS Editor for visual configuration.
+'=============================================================================
+
 Imports Microsoft.VisualBasic
 Imports System
 Imports System.Drawing
@@ -5,27 +34,36 @@ Imports System.Collections
 Imports System.ComponentModel
 Imports System.Windows.Forms
 Imports System.Data
-Imports TatukGIS_XDK11
+Imports TatukGIS_XDK11  ' TatukGIS ActiveX/COM interop assembly
 
 Namespace SQLLayer
     ''' <summary>
-    ''' Summary description for WinForm.
+    ''' Main application form for the SQLLayer ActiveX sample.
+    ''' Hosts an <see cref="AxTatukGIS_XDK11.AxTGIS_ViewerWnd"/> (COM-hosted viewer)
+    ''' that renders data loaded from a .ttkls SQL layer definition file.
     ''' </summary>
     Public Class WinForm
         Inherits System.Windows.Forms.Form
-        ''' <summary>
-        ''' Required designer variable.
-        ''' </summary>
-        Private components As System.ComponentModel.IContainer
-        Private WithEvents toolBar1 As System.Windows.Forms.ToolBar
-        Private btnFullExtent As System.Windows.Forms.ToolBarButton
-        Private toolBarButton1 As System.Windows.Forms.ToolBarButton
-        Private btnZoom As System.Windows.Forms.ToolBarButton
-        Private btnDrag As System.Windows.Forms.ToolBarButton
-        Private statusBar1 As System.Windows.Forms.StatusBar
-        Private imageList1 As System.Windows.Forms.ImageList
-        Private GIS As AxTatukGIS_XDK11.AxTGIS_ViewerWnd
 
+        ' ------------------------------------------------------------------ '
+        '  Designer-managed fields (do not modify names/types)                '
+        ' ------------------------------------------------------------------ '
+
+        ''' <summary>Required designer variable.</summary>
+        Private components As System.ComponentModel.IContainer
+
+        Private WithEvents toolBar1 As System.Windows.Forms.ToolBar    ' Main toolbar (legacy ToolBar control)
+        Private btnFullExtent As System.Windows.Forms.ToolBarButton    ' Zoom to full extent
+        Private toolBarButton1 As System.Windows.Forms.ToolBarButton   ' Visual separator
+        Private btnZoom As System.Windows.Forms.ToolBarButton          ' Activate zoom mode (toggle)
+        Private btnDrag As System.Windows.Forms.ToolBarButton          ' Activate drag/pan mode (toggle)
+        Private statusBar1 As System.Windows.Forms.StatusBar           ' Status bar
+        Private imageList1 As System.Windows.Forms.ImageList           ' Toolbar icon images
+        Private GIS As AxTatukGIS_XDK11.AxTGIS_ViewerWnd              ' TatukGIS ActiveX viewer
+
+        ''' <summary>
+        ''' Initialises the form and its child controls.
+        ''' </summary>
         Public Sub New()
             '
             ' Required for Windows Form Designer support
@@ -38,7 +76,7 @@ Namespace SQLLayer
         End Sub
 
         ''' <summary>
-        ''' Clean up any resources being used.
+        ''' Releases managed and unmanaged resources held by the form.
         ''' </summary>
         Protected Overloads Overrides Sub Dispose(ByVal disposing As Boolean)
             If disposing Then
@@ -122,7 +160,7 @@ Namespace SQLLayer
             Me.statusBar1.Size = New System.Drawing.Size(587, 19)
             Me.statusBar1.TabIndex = 1
             '
-            'GIS
+            'GIS  — ActiveX viewer hosted inside a WinForms AxHost wrapper
             '
             Me.GIS.Dock = System.Windows.Forms.DockStyle.Fill
             Me.GIS.Enabled = True
@@ -151,10 +189,13 @@ Namespace SQLLayer
         End Sub
 #End Region
 
+        ' TGIS_Utils instance used to resolve the sample data directory path
+        ' via the COM API (GisSamplesDataDirDownload is an instance method on the
+        ' ActiveX binding, unlike the shared method in the managed NDK).
         Dim GisUtils As New TGIS_Utils()
 
         ''' <summary>
-        ''' The main entry point for the application.
+        ''' Application entry point.  Configures visual styles and launches the form.
         ''' </summary>
         <STAThread>
         Shared Sub Main()
@@ -163,13 +204,30 @@ Namespace SQLLayer
             Application.Run(New WinForm())
         End Sub
 
+        ''' <summary>
+        ''' Handles the form Load event.
+        ''' Opens the SQL layer project file and zooms to the full data extent.
+        ''' </summary>
+        ''' <remarks>
+        ''' <c>GisUtils.GisSamplesDataDirDownload()</c> resolves to the TatukGIS
+        ''' sample data directory.  The gistest.ttkls file inside
+        ''' \Samples\SQLLayers\ holds the database connection string and SQL query
+        ''' that define the virtual layer.  Edit that file to point at your own
+        ''' database before running.
+        ''' </remarks>
         Private Sub WinForm_Load(ByVal sender As Object, ByVal e As System.EventArgs) Handles MyBase.Load
-            ' open a project
+            ' Open the SQL layer definition file via the COM/ActiveX viewer.
+            ' The AxTGIS_ViewerWnd.Open method accepts file paths to any
+            ' supported layer or project format, including .ttkls files.
             GIS.Open(GisUtils.GisSamplesDataDirDownload() & "\Samples\SQLLayers\gistest.ttkls")
 
+            ' Zoom the view so that all loaded features are visible.
             GIS.FullExtent()
         End Sub
 
+        ''' <summary>
+        ''' Changes the toolbar cursor to a hand pointer when over an active button.
+        ''' </summary>
         Private Sub toolBar1_MouseMove(ByVal sender As Object, ByVal e As System.Windows.Forms.MouseEventArgs) Handles toolBar1.MouseMove
             Dim p As Point = New Point(e.X, e.Y)
 
@@ -180,17 +238,21 @@ Namespace SQLLayer
             End If
         End Sub
 
+        ''' <summary>
+        ''' Handles toolbar button clicks; dispatches to the appropriate viewer action.
+        ''' Uses the legacy ToolBarButtonClickEventArgs (ToolBar control).
+        ''' </summary>
         Private Sub toolBar1_ButtonClick(ByVal sender As Object, ByVal e As System.Windows.Forms.ToolBarButtonClickEventArgs) Handles toolBar1.ButtonClick
             Select Case toolBar1.Buttons.IndexOf(e.Button)
                 Case 0
-                    ' btnFullExt
+                    ' btnFullExtent — zoom to the full data extent
                     GIS.FullExtent()
                 Case 2
-                    ' btnZoom
+                    ' btnZoom — activate rubber-band zoom interaction mode
                     btnDrag.Pushed = False
                     GIS.Mode = TGIS_ViewerMode.Zoom
                 Case 3
-                    ' btnDrag
+                    ' btnDrag — activate pan/drag interaction mode
                     btnZoom.Pushed = False
                     GIS.Mode = TGIS_ViewerMode.Drag
             End Select

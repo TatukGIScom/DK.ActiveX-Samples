@@ -1,4 +1,34 @@
-﻿Imports System
+﻿' =============================================================================
+' Hierarchy sample — demonstrates layer organization and grouping using
+' TGIS_Hierarchy (ActiveX/COM wrapper edition).
+'
+' What the sample shows:
+'   - Creating a hierarchical layer structure (nested groups of layers) on a map
+'   - Organizing related layers (e.g., Poland/Waters/Lakes, Poland/Areas/city)
+'   - Using CreateGroup() to create named logical groups for layer organization
+'   - Using AddLayer() and DeleteLayer() to manage layer group membership
+'   - Creating nested groups with multi-level hierarchies via CreateGroup chains
+'   - Using MoveGroup() to reparent groups within the hierarchy tree
+'   - Using Groups() accessor to retrieve groups by name for further operations
+'   - Displaying the hierarchy in a legend control via TGIS_ControlLegendMode.Groups
+'
+' ActiveX-specific implementation details:
+'   - Using AxTGIS_ViewerWnd and AxTGIS_ControlLegend (ActiveX wrapper controls)
+'   - COM interop for GIS_Hierarchy access via TatukGIS_XDK11 wrapper
+'   - GIS.Items.Item(i) instead of standard indexer (COM compatibility)
+'   - GIS.GetOcx() for control-to-control linking at runtime
+'
+' Key TatukGIS API concepts shown here:
+'   TGIS_ViewerWnd              - main visual map control (ActiveX COM version)
+'   TGIS_Hierarchy              - layer grouping and organization system
+'   TGIS_Hierarchy.CreateGroup() - creates a named group container
+'   TGIS_Hierarchy.AddLayer()    - adds layer to a group
+'   TGIS_Hierarchy.DeleteLayer() - removes layer from a group
+'   TGIS_Hierarchy.MoveGroup()   - reparents a group to another group
+'   TGIS_ControlLegend           - legend panel (Groups mode for hierarchy view)
+' =============================================================================
+
+Imports System
 Imports System.Windows.Forms
 Imports System.Drawing
 Imports TatukGIS_XDK11

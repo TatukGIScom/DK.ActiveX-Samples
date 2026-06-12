@@ -7,10 +7,40 @@ Imports System.Windows.Forms
 Imports System.Data
 Imports TatukGIS_XDK11
 
+' Encode sample — demonstrates transparent layer encoding using read/write callbacks (ActiveX/COM edition).
+'
+' What the sample shows:
+'   - Loading a world shapefile into the GIS viewer with labels
+'   - Creating a separate vector layer and exporting to new file with encryption applied
+'   - Using TGIS_LayerSHP ReadEvent and WriteEvent callbacks for cipher operations
+'   - Implementing XOR cipher encoding byte-by-byte keyed on file position
+'   - Encoding shapefile while preserving structure and attributes
+'   - Re-opening encoded file from disk transparently
+'   - Decoding data on-the-fly using same callback in read path
+'   - Rendering encoded layer with distinct colour for visual distinction
+'   - Round-trip persistence: save encoded, load with decoding, render
+'   - Pluggable encryption approach for custom cipher algorithms
+'
+' ActiveX/COM-specific details:
+'   - GIS is AxTGIS_ViewerWnd (ActiveX wrapper, not managed control)
+'   - GIS.Items.Item(i) replaces the indexer for layer access
+'   - GisUtils instance used for utility calls in COM context
+'   - ReadEvent/WriteEvent have raw ActiveX signature (ByRef Translated, Pos, Buffer, Count)
+'   - Buffer access methods differ from NDK .NET edition
+'
+' Key TatukGIS API concepts shown here:
+'   TGIS_ViewerWnd (via AxTGIS_ViewerWnd) - main visual map control
+'   TGIS_LayerSHP              - ESRI Shapefile layer (source and destination)
+'   TGIS_LayerVector            - base class for vector layers
+'   TGIS_Layer.ImportLayer()    - export/convert layer with transformation
+'   ReadEvent (callback)        - intercept layer read to decode data
+'   WriteEvent (callback)       - intercept layer write to encode data
+'   TGIS_Params                 - layer styling (colour, etc.)
+'   TGIS_Color                  - colour constants for layer visualization
+'   GIS.Add()                   - add layer to the viewer
+'   Custom cipher algorithm     - XOR encryption (example approach)
+
 Namespace Encode
-    ''' <summary>
-    ''' Summary description for WinForm.
-    ''' </summary>
     Public Class WinForm
         Inherits System.Windows.Forms.Form
         ''' <summary>
@@ -176,11 +206,13 @@ Namespace Encode
 
         Private WithEvents EventLayer As TGIS_LayerSHP
 
+        ''' <summary>Closes all loaded layers.</summary>
         Private Sub btnCloseAll_Click(ByVal sender As Object, ByVal e As System.EventArgs) Handles btnCloseAll.Click
             GIS.Close()
         End Sub
 
 
+        ''' <summary>Opens the base world shapefile (WorldDCW) with country name labels.</summary>
         Private Sub btnOpenBase_Click(ByVal sender As Object, ByVal e As System.EventArgs) Handles btnOpenBase.Click
             Dim ll As TGIS_LayerSHP
 
@@ -195,6 +227,10 @@ Namespace Encode
             GIS.FullExtent()
         End Sub
 
+        ''' <summary>
+        ''' Exports the base layer to encoded.shp via ImportLayer with the XOR write callback wired.
+        ''' Uses GIS.Items.Item(0) instead of the indexer (ActiveX COM wrapper difference).
+        ''' </summary>
         Private Sub btnEncode_Click(ByVal sender As Object, ByVal e As System.EventArgs) Handles btnEncode.Click
             Dim ls As TGIS_LayerVector
             Dim ld As TGIS_LayerSHP
@@ -218,6 +254,10 @@ Namespace Encode
             ld.ImportLayer(ls, GIS.Extent, TGIS_ShapeType.Polygon, "", False)
         End Sub
 
+        ''' <summary>
+        ''' Opens the encoded shapefile with the ReadEvent callback wired so the XOR cipher is
+        ''' reversed transparently on every read.  The layer is tinted green.
+        ''' </summary>
         Private Sub btnOpenEncoded_Click(ByVal sender As Object, ByVal e As System.EventArgs) Handles btnOpenEncoded.Click
             Dim ll As TGIS_LayerSHP
 
@@ -236,7 +276,11 @@ Namespace Encode
             GIS.FullExtent()
         End Sub
 
-        ' do decoding with incrementing XOR value
+        ''' <summary>
+        ''' ActiveX read callback — receives raw (Translated, Pos, Buffer, Count) parameters.
+        ''' Buffer access is not yet implemented in this variant (see TODO in body).
+        ''' Semantics: decode each byte by XOR-ing with (Pos + i) mod 256.
+        ''' </summary>
         Private Sub doRead(ByRef Translated As Boolean, Pos As Integer, Buffer As Integer, Count As Integer)
             Dim i As Integer = 0
             Do While i < Count
@@ -245,7 +289,11 @@ Namespace Encode
             Loop
         End Sub
 
-        ' do encoding with incrementing XOR value
+        ''' <summary>
+        ''' ActiveX write callback — receives raw (Translated, Pos, Buffer, Count) parameters.
+        ''' Buffer access is not yet implemented in this variant (see TODO in body).
+        ''' Semantics: encode each byte by XOR-ing with (Pos + i) mod 256.
+        ''' </summary>
         Private Sub doWrite(ByRef Translated As Boolean, Pos As Integer, Buffer As Integer, Count As Integer)
             Dim i As Integer = 0
             Do While i < Count

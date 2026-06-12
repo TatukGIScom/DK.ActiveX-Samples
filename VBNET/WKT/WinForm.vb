@@ -1,3 +1,32 @@
+' WKT sample — demonstrates working with Well-Known Text (WKT) geometry format (VB.NET ActiveX/COM).
+'
+' What the sample shows:
+'   - Parsing WKT (Well-Known Text) format geometry strings (COM wrapper)
+'   - Creating shapes from WKT representation
+'   - Displaying parsed geometries in map viewer
+'   - Converting between WKT text and TatukGIS shape objects (COM)
+'   - Supporting all geometry types: Point, LineString, Polygon, MultiPoint, MultiLineString, MultiPolygon
+'   - Handling 2D and 3D coordinates (with Z values)
+'   - Adding WKT-created shapes to in-memory vector layer
+'   - Styling parsed geometries with color and symbol
+'   - Exporting shapes to WKT format
+'   - Validating WKT syntax and format
+'   - Using dropdown to select geometry type
+'   - Handling WKT parsing errors gracefully
+'   - Real-time geometry visualization via COM
+'
+' Key TatukGIS API concepts shown here:
+'   TGIS_ViewerWnd              - main visual map control (COM wrapper)
+'   TGIS_LayerVector            - in-memory layer for parsed WKT geometries (COM)
+'   TGIS_Shape.FromWKT()        - parse WKT string to shape object (COM)
+'   TGIS_Shape.ToWKT()          - export shape to WKT representation (COM)
+'   WKT (Well-Known Text)       - ISO 19125 geometry format standard
+'   Geometry types              - Point, LineString, Polygon, Multi* variants
+'   3D coordinates              - Z values for elevation data
+'   Coordinate system           - CRS assignment to WKT geometries
+'   WKT validation              - syntax checking and error handling
+'   Text input                  - user-provided WKT strings
+
 Imports Microsoft.VisualBasic
 Imports System
 Imports System.Drawing

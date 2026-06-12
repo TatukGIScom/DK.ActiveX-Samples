@@ -3,6 +3,39 @@ Imports System.Windows.Forms
 Imports System.Drawing
 Imports TatukGIS_XDK11
 
+' Enumerators sample — demonstrates spatial iteration using TGIS_LayerVector.Loop() enumerators (ActiveX/COM).
+'
+' What the sample shows:
+'   - Loading a polygon shapefile (California Counties) into the GIS viewer
+'   - Using nested Loop() enumerators to iterate through all shapes
+'   - Outer Loop() visits every county polygon in the layer
+'   - Inner Loop_5(extent, "", shape, "****T", True) counts topologically adjacent neighbors
+'   - DE-9IM spatial relationship filter "****T" identifies touching/intersecting boundaries
+'   - Creating a new COUNT field for storing neighbor count results
+'   - Using MakeEditable to modify feature attributes during enumeration
+'   - Rendering layer as 5-zone white-to-red color ramp keyed on COUNT field value
+'   - Displaying COUNT values as labels on each county polygon
+'   - Spatial indexing enabling efficient neighbor searches
+'
+' ActiveX/COM-specific details:
+'   - GIS is AxTGIS_ViewerWnd (ActiveX wrapper, not managed control)
+'   - GIS.Items.Item(i) replaces array indexer for layer access
+'   - GisUtils instance used for utility calls in COM context
+'   - Loop_5 is COM-disambiguated name for five-parameter Loop overload
+'   - Color constants via (New TGIS_Color).White etc. instead of predefined constants
+'
+' Key TatukGIS API concepts shown here:
+'   TGIS_ViewerWnd (via AxTGIS_ViewerWnd) - main visual map control
+'   TGIS_LayerVector            - vector layer with spatial indexing and enumeration
+'   TGIS_LayerVector.Loop()     - returns enumerator for spatial iteration
+'   TGIS_LayerVectorEnumerator  - iterator supporting MoveNext and Current access
+'   TGIS_Shape                  - individual geographic feature (county polygon)
+'   TGIS_Shape.ProjectedExtent  - bounding box for spatial queries
+'   TGIS_LayerVector.AddField() - create new attribute field in layer schema
+'   TGIS_Shape.MakeEditable()   - enter edit mode to modify shape attributes
+'   Params.Render.Expression    - value expression for color ramp rendering
+'   DE-9IM relationships        - spatial topology predicates (T = touching/intersection)
+
 Namespace Enumerators
 
     Public Class frmMain
@@ -181,6 +214,16 @@ Namespace Enumerators
             Application.Run(New frmMain())
         End Sub
 
+        ''' <summary>
+        ''' Counts topological neighbors for every county and visualizes the result as a
+        ''' 5-zone white-to-red color ramp.  The COUNT field is added if it does not yet exist.
+        ''' </summary>
+        ''' <summary>
+        ''' Counts topologically adjacent neighbors for each county polygon and renders
+        ''' the results using a white-to-red color gradient (more neighbors = redder).
+        ''' Uses nested Loop() enumerators: outer loop visits every county, inner loop
+        ''' uses Loop_5() with DE-9IM "****T" filter to find adjacent neighbors (touching boundary).
+        ''' </summary>
         Private Sub actNeighbors()
             Dim shp As TGIS_Shape
             Dim shpNbr As TGIS_Shape
@@ -193,74 +236,98 @@ Namespace Enumerators
 
             max_cnt = 0
 
+            '' get the vector layer (counties)
             lv = CType(GIS.Items.item(0), TGIS_LayerVector)
 
+            '' create a COUNT field to store the neighbor count for each shape
+            '' (only create if it doesn't already exist)
             If lv.FindField("COUNT") < 0 Then
                 lv.AddField("COUNT", TGIS_FieldType.Number, 10, 0)
             End If
 
             itm_cnt = 0
+            '' show a progress indicator for the time-consuming neighbor counting
             GIS.HourglassPrepare()
 
             Try
-                ' mark all shapes that can be affected as editable
-                ' to keep the layer conststent after modyfying shapes
-                ' also compute numer of shape stah can be affected
+                '' iterate through each county polygon
                 itm_cnt_max = 0
 
                 For Each shp In lv.Loop()
+                    '' initialize neighbor count to -1 (will be incremented for each neighbor found)
                     cnt = -1
+                    '' use Loop_5 with the DE-9IM "****T" predicate to find topologically adjacent shapes
+                    '' the "T" in the predicate means the boundaries must touch (T = true for interior OR boundary)
                     For Each shpNbr In lv.Loop_5(shp.ProjectedExtent, "", shp, "****T", True)
                         cnt = cnt + 1
+                        '' animate the hourglass cursor to show progress during processing
                         GIS.HourglassShake()
                     Next
+                    '' make the shape editable so we can update its COUNT field
                     tmpshp = shp.MakeEditable()
+                    '' store the neighbor count in the COUNT field
                     tmpshp.SetField("COUNT", cnt)
+                    '' track the maximum neighbor count for the color ramp scaling
                     If cnt > max_cnt Then
                         max_cnt = cnt
                     End If
                 Next
             Finally
+                '' hide the progress indicator
                 GIS.HourglassRelease()
+                '' configure labels to display the COUNT field value for each county
                 lv.Params.Labels.Field = "COUNT"
+                '' use the COUNT field for color rendering
                 lv.Params.Render.Expression = "COUNT"
                 lv.Params.Render.MinVal = 1
+                '' set the maximum value based on the highest neighbor count found
                 lv.Params.Render.MaxVal = max_cnt
+                '' create a white-to-red color gradient (low neighbor count = white, high = red)
                 lv.Params.Render.StartColor = (New TGIS_Color).White
                 lv.Params.Render.EndColor = (New TGIS_Color).Red
+                '' divide the color range into 5 discrete zones for clearer visualization
                 lv.Params.Render.Zones = 5
+                '' apply the gradient color to polygon fill
                 lv.Params.Area.Color = (New TGIS_Color).RenderColor
+                '' repaint the map to display the neighbor count colors
                 GIS.InvalidateWholeMap()
             End Try
 
 
         End Sub
 
+        ''' <summary>Loads the California Counties shapefile and fits the viewer to its full extent.</summary>
         Private Sub frmMain_Load(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles MyBase.Load
-            ' add states layer
+            '' load the California counties polygon layer; this will be the data analyzed for neighbor counts
             GIS.Add(GisUtils.GisCreateLayer("world", GisUtils.GisSamplesDataDirDownload() & "\World\Countries\USA\States\California\tl_2008_06_county.shp"))
+            '' zoom the viewer to show all counties in California
             GIS.FullExtent()
         End Sub
 
+        ''' <summary>Dispatches toolbar button clicks: Full Extent, Zoom In/Out, Drag toggle, Count Neighbors.</summary>
         Private Sub tlbr1_ButtonClick(ByVal sender As System.Object, ByVal e As System.Windows.Forms.ToolBarButtonClickEventArgs) Handles tlbr1.ButtonClick
             Select Case tlbr1.Buttons.IndexOf(e.Button)
                 Case 0
+                    '' button 0: show full extent of all counties
                     GIS.FullExtent()
                 Case 1
-                    ' change viewer zoom
+                    '' button 1: zoom in (increase zoom 2x)
                     GIS.Zoom = GIS.Zoom * 2
                 Case 2
-                    ' change viewer zoom
+                    '' button 2: zoom out (decrease zoom 2x)
                     GIS.Zoom = GIS.Zoom / 2
                 Case 3
-                    ' change viewer mode
+                    '' button 3: toggle between Select mode and Drag (pan) mode
                     Select Case tlbr1.Buttons(3).Pushed
                         Case True
+                            '' button pushed: enable drag/pan mode
                             GIS.Mode = TGIS_ViewerMode.Drag
                         Case False
+                            '' button not pushed: enable selection mode
                             GIS.Mode = TGIS_ViewerMode.Select
                     End Select
                 Case 4
+                    '' button 4: count neighbors and render results
                     actNeighbors()
             End Select
         End Sub

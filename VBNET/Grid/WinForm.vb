@@ -1,3 +1,29 @@
+' =============================================================================
+' This source code is a part of TatukGIS Developer Kernel.
+' =============================================================================
+'
+' Grid Sample (ActiveX / XDK11 edition) - How to manipulate grid (raster/DEM)
+' layer presentation using the TatukGIS ActiveX component.
+'
+' This sample is functionally identical to the NDK WinForms version but uses
+' the ActiveX wrapper classes (AxTatukGIS_XDK11 namespace) instead of the
+' managed .NET SDK.  Key differences:
+'   - GIS is AxTGIS_ViewerWnd (ActiveX host) instead of TGIS_ViewerWnd.
+'   - GIS_ControlLegend is AxTGIS_ControlLegend; its GIS_Viewer is set via
+'     GIS.GetOcx() to obtain the underlying COM object reference.
+'   - Layer items are accessed through GIS.Items.item(0) rather than GIS.Items[0].
+'   - Mouse events use the XDK11-specific ITGIS_ViewerWndEvents_MouseMoveEvent
+'     signature with a TGIS_DoubleArray for native pixel values.
+'   - TGIS_Utils is instantiated as a COM object (Dim GisUtils As New TGIS_Utils).
+'
+' This sample demonstrates:
+'   - Loading a raster DEM in ArcInfo Binary Grid (.adf) format.
+'   - Clearing and redefining altitude colour zones (AltitudeMapZones).
+'   - Loading display parameters from an external INI configuration file.
+'   - Toggling hill-shading (GridShadow) for 3-D terrain appearance.
+'   - Reading the raw elevation value under the mouse cursor via Locate.
+' =============================================================================
+
 Imports Microsoft.VisualBasic
 Imports System
 Imports System.Drawing
@@ -9,32 +35,31 @@ Imports TatukGIS_XDK11
 
 Namespace Grid
     ''' <summary>
-    ''' Summary description for WinForm.
+    ''' Main form for the Grid sample (ActiveX edition).
+    ''' Uses the TatukGIS XDK11 ActiveX control hosted in a WinForms AxHost wrapper.
     ''' </summary>
     Public Class WinForm
         Inherits System.Windows.Forms.Form
-        ''' <summary>
-        ''' Required designer variable.
-        ''' </summary>
+        ''' <summary>Required designer variable.</summary>
         Private components As System.ComponentModel.IContainer
         Private panel1 As System.Windows.Forms.Panel
         Private WithEvents toolBar1 As System.Windows.Forms.ToolBar
         Private imageList1 As System.Windows.Forms.ImageList
-        Private btnFullExtent As System.Windows.Forms.ToolBarButton
+        Private btnFullExtent As System.Windows.Forms.ToolBarButton    ' Zoom to full extent
         Private toolBarButton1 As System.Windows.Forms.ToolBarButton
-        Private btnZoom As System.Windows.Forms.ToolBarButton
-        Private btnDrag As System.Windows.Forms.ToolBarButton
+        Private btnZoom As System.Windows.Forms.ToolBarButton          ' Activate zoom mode
+        Private btnDrag As System.Windows.Forms.ToolBarButton          ' Activate pan/drag mode
         Private toolBarButton2 As System.Windows.Forms.ToolBarButton
-        Private WithEvents button1 As System.Windows.Forms.Button
-        Private WithEvents button2 As System.Windows.Forms.Button
-        Private WithEvents button3 As System.Windows.Forms.Button
+        Private WithEvents button1 As System.Windows.Forms.Button      ' "Clear" - removes custom altitude zones
+        Private WithEvents button2 As System.Windows.Forms.Button      ' "User Defined" - applies hard-coded zones
+        Private WithEvents button3 As System.Windows.Forms.Button      ' "Reload INI" - reloads the layer's own INI file
         Private statusBar1 As System.Windows.Forms.StatusBar
-        Private statusBarPanel1 As System.Windows.Forms.StatusBarPanel
-        Private statusBarPanel2 As System.Windows.Forms.StatusBarPanel
-        Private GIS_ControlLegend As AxTatukGIS_XDK11.AxTGIS_ControlLegend
-        Friend WithEvents btnUserINI As System.Windows.Forms.Button
-        Friend WithEvents btnShadow As System.Windows.Forms.Button
-        Private WithEvents GIS As AxTatukGIS_XDK11.AxTGIS_ViewerWnd
+        Private statusBarPanel1 As System.Windows.Forms.StatusBarPanel  ' "Altitude:" label
+        Private statusBarPanel2 As System.Windows.Forms.StatusBarPanel  ' Elevation value display
+        Private GIS_ControlLegend As AxTatukGIS_XDK11.AxTGIS_ControlLegend  ' Layer list panel (ActiveX)
+        Friend WithEvents btnUserINI As System.Windows.Forms.Button    ' Load a custom sample INI colour config
+        Friend WithEvents btnShadow As System.Windows.Forms.Button     ' Toggle hillshade on/off
+        Private WithEvents GIS As AxTatukGIS_XDK11.AxTGIS_ViewerWnd   ' The main map viewer (ActiveX)
 
         Public Sub New()
             '
@@ -270,6 +295,7 @@ Namespace Grid
         End Sub
 #End Region
 
+        ' COM utility helper - provides GisSamplesDataDirDownload and Point() helpers
         Dim GisUtils As New TGIS_Utils()
 
         ''' <summary>
@@ -282,41 +308,68 @@ Namespace Grid
             Application.Run(New WinForm())
         End Sub
 
+        ''' <summary>
+        ''' Opens the sample NED DEM grid file and wires the legend control.
+        ''' In the ActiveX edition, GIS_ControlLegend.GIS_Viewer must be set to
+        ''' GIS.GetOcx() rather than the AxHost wrapper itself, because the legend
+        ''' control expects the underlying COM interface pointer.
+        ''' </summary>
         Private Sub WinForm_Load(ByVal sender As Object, ByVal e As System.EventArgs) Handles MyBase.Load
-            ' open a file
+            ' Wire the legend panel to the underlying COM viewer object
             GIS_ControlLegend.GIS_Viewer = GIS.GetOcx()
+            ' open a file
             GIS.Open(GisUtils.GisSamplesDataDirDownload() & "\World\Countries\USA\States\California\San Bernardino\NED\w001001.adf")
         End Sub
 
+        ''' <summary>
+        ''' Handles toolbar button clicks for navigation mode switching.
+        ''' Button indices: 0=FullExtent, 2=Zoom, 3=Drag (index 1 is a separator).
+        ''' The Pushed state of toggle buttons is managed to give visual feedback.
+        ''' </summary>
         Private Sub toolBar1_ButtonClick(ByVal sender As Object, ByVal e As System.Windows.Forms.ToolBarButtonClickEventArgs) Handles toolBar1.ButtonClick
             Select Case toolBar1.Buttons.IndexOf(e.Button)
                 Case 0
-                    ' show full map
+                    ' Zoom to the combined extent of all loaded layers
                     GIS.FullExtent()
                 Case 2
-                    ' set zoom mode
+                    ' Switch to rubber-band zoom mode; unpress the Drag button
                     GIS.Mode = TGIS_ViewerMode.Zoom
                     toolBar1.Buttons(3).Pushed = False
                 Case 3
-                    ' set drag mode
+                    ' Switch to pan/drag mode; unpress the Zoom button
                     GIS.Mode = TGIS_ViewerMode.Drag
                     toolBar1.Buttons(2).Pushed = False
             End Select
         End Sub
 
+        ''' <summary>
+        ''' Clears all custom altitude colour zones from the pixel layer,
+        ''' reverting to the default greyscale gradient.
+        ''' In the ActiveX edition, items are accessed via GIS.Items.item(0).
+        ''' </summary>
         Private Sub button1_Click(ByVal sender As Object, ByVal e As System.EventArgs) Handles button1.Click
             Dim ll As TGIS_LayerPixel
 
+            ' Access the first layer through the COM items collection
             ll = CType(GIS.Items.item(0), TGIS_LayerPixel)
+            ' Remove all elevation band colour assignments
             ll.Params.Pixel.AltitudeMapZones.Clear()
             GIS.InvalidateWholeMap()
         End Sub
 
+        ''' <summary>
+        ''' Applies a hard-coded hypsometric colour scheme by adding altitude
+        ''' zones programmatically.  Each zone string is in the format:
+        '''   "minElevation, maxElevation, colourName, zoneLabel"
+        ''' Elevation values are in the DEM's native unit (metres for NED).
+        ''' </summary>
         Private Sub button2_Click(ByVal sender As Object, ByVal e As System.EventArgs) Handles button2.Click
             Dim ll As TGIS_LayerPixel
 
             ll = CType(GIS.Items.item(0), TGIS_LayerPixel)
+            ' Clear any existing zones before adding the new scheme
             ll.Params.Pixel.AltitudeMapZones.Clear()
+            ' Six elevation bands from valley floor to high peaks
             ll.Params.Pixel.AltitudeMapZones.Add("200,  400 , OLIVE , VERY LOW")
             ll.Params.Pixel.AltitudeMapZones.Add("400,  700 , OLIVE , LOW")
             ll.Params.Pixel.AltitudeMapZones.Add("700,  900 , GREEN , MID")
@@ -326,15 +379,23 @@ Namespace Grid
             GIS.InvalidateWholeMap()
         End Sub
 
+        ''' <summary>
+        ''' Reloads the layer display configuration from the INI file
+        ''' co-located with the grid data file.
+        ''' </summary>
         Private Sub button3_Click(ByVal sender As Object, ByVal e As System.EventArgs) Handles button3.Click
             Dim ll As TGIS_LayerPixel
 
             ll = CType(GIS.Items.item(0), TGIS_LayerPixel)
+            ' Point ConfigName to the data file; TatukGIS resolves the matching INI
             ll.ConfigName = GisUtils.GisSamplesDataDirDownload() & "\World\Countries\USA\States\California\San Bernardino\NED\w001001.adf"
             ll.RereadConfig()
             GIS.InvalidateWholeMap()
         End Sub
 
+        ''' <summary>
+        ''' Updates the cursor to a hand when hovering over active toolbar buttons.
+        ''' </summary>
         Private Sub toolBar1_MouseMove(ByVal sender As Object, ByVal e As System.Windows.Forms.MouseEventArgs) Handles toolBar1.MouseMove
             Dim p As Point = New Point(e.X, e.Y)
 
@@ -345,39 +406,62 @@ Namespace Grid
             End If
         End Sub
 
+        ''' <summary>
+        ''' Queries the raw DEM elevation value at the map location under the mouse
+        ''' and displays it in the status bar.
+        '''
+        ''' In the ActiveX edition, the mouse event type is the XDK11-specific
+        ''' ITGIS_ViewerWndEvents_MouseMoveEvent and native pixel values are
+        ''' returned as TGIS_DoubleArray (COM array wrapper); access via .Value(0).
+        ''' GisUtils.Point() creates a COM-compatible TPoint from screen coords.
+        ''' </summary>
         Private Sub GIS_MouseMove(ByVal sender As Object, ByVal e As AxTatukGIS_XDK11.ITGIS_ViewerWndEvents_MouseMoveEvent) Handles GIS.MouseMoveEvent
             Dim ptg As TGIS_Point
             Dim ll As TGIS_LayerPixel
             Dim rgb As TGIS_Color = New TGIS_Color()
+            ' TGIS_DoubleArray is the COM-compatible wrapper for an array of doubles
             Dim natives As New TGIS_DoubleArray
             Dim transp As Boolean = False
 
+            ' Avoid querying while the map is being redrawn
             If GIS.InPaint Then
                 Return
             End If
 
+            ' GisUtils.Point() creates a COM TPoint from screen pixel coordinates
             ptg = GIS.ScreenToMap(GisUtils.Point(e.X, e.Y))
             ll = CType(GIS.Items.Item(0), TGIS_LayerPixel)
 
+            ' Locate returns True when the point falls within the raster extent
             If ll.Locate(ptg, rgb, natives, transp) Then
+                ' .Value(0) accesses element 0 of the COM double array (elevation)
                 statusBar1.Panels(1).Text = natives.Value(0).ToString()
             Else
                 statusBar1.Panels(1).Text = "Unknown"
             End If
         End Sub
 
+        ''' <summary>
+        ''' Toggles the hill-shading (GridShadow) effect on the DEM layer.
+        ''' </summary>
         Private Sub btnShadow_Click(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles btnShadow.Click
             Dim ll As TGIS_LayerPixel
 
             ll = CType(GIS.Items.item(0), TGIS_LayerPixel)
+            ' Flip the current shadow state
             ll.Params.Pixel.GridShadow = Not ll.Params.Pixel.GridShadow
             GIS.InvalidateWholeMap()
         End Sub
 
+        ''' <summary>
+        ''' Loads a pre-built sample INI file (dem_ned.ini) that ships with
+        ''' the TatukGIS sample data, demonstrating external colour configuration.
+        ''' </summary>
         Private Sub btnUserINI_Click(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles btnUserINI.Click
             Dim ll As TGIS_LayerPixel
 
             ll = CType(GIS.Items.item(0), TGIS_LayerPixel)
+            ' Point ConfigName to the bundled sample INI file
             ll.ConfigName = GisUtils.GisSamplesDataDirDownload() & "\Samples\Projects\dem_ned.ini"
             ll.RereadConfig()
             GIS.InvalidateWholeMap()
